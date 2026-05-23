@@ -1,0 +1,17 @@
+[Unit]
+Description=UMKM AI Suite — Cloud/Admin Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/umkm-ai-suite
+EnvironmentFile=/opt/umkm-ai-suite/.env
+ExecStart=/opt/umkm-ai-suite/venv/bin/uvicorn cloud.main:app --host 127.0.0.1 --port 9000 --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

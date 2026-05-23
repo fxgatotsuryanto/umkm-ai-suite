@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Deploy secrets
+deploy/.env
+
 # Python
 __pycache__/
 *.py[cod]
