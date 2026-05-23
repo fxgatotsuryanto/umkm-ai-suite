@@ -5,8 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import TokenBalance, TokenLedger
 
-OFFLINE_LIMIT = 20
-
 TOKEN_COSTS = {
     "wa_reply": 2,
     "content_generate": 5,

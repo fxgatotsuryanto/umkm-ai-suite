@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -79,8 +80,8 @@ class TokenBalance(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     balance: Mapped[int] = mapped_column(Integer, default=0)
     package: Mapped[str] = mapped_column(String(50), default="starter")
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    last_synced: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_synced: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class TokenLedger(Base):

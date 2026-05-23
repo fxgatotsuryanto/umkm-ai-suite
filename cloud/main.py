@@ -69,7 +69,7 @@ def require_license_key(x_api_key: str = Header(...)):
     license_data = _licenses[x_api_key]
     if license_data.get("expires_at") and datetime.fromisoformat(license_data["expires_at"]) < datetime.utcnow():
         raise HTTPException(status_code=401, detail="License expired")
-    return license_data
+    return {"_key": x_api_key, **license_data}
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

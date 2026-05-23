@@ -236,6 +236,17 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
     return {"id": product.id, "name": product.name, "message": "Produk berhasil ditambahkan"}
 
 
+@router.delete("/products/{product_id}", tags=["Products"])
+async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+    await db.delete(product)
+    await db.commit()
+    return {"message": "Produk berhasil dihapus"}
+
+
 # ── FAQs ──────────────────────────────────────────────────────────────────────
 
 @router.get("/faqs", tags=["FAQ"])
@@ -266,6 +277,17 @@ async def create_faq(data: FAQCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(faq)
     return {"id": faq.id, "message": "FAQ berhasil ditambahkan"}
+
+
+@router.delete("/faqs/{faq_id}", tags=["FAQ"])
+async def delete_faq(faq_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FAQ).where(FAQ.id == faq_id))
+    faq = result.scalar_one_or_none()
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ tidak ditemukan")
+    await db.delete(faq)
+    await db.commit()
+    return {"message": "FAQ berhasil dihapus"}
 
 
 # ── Business Profile ──────────────────────────────────────────────────────────

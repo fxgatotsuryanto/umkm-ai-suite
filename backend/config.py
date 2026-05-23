@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     CLOUD_API_URL: str = "https://your-cloud.railway.app"
     CLOUD_API_KEY: str = ""
 
+    CORS_ORIGINS: str = ""  # comma-separated, e.g. "http://localhost:3000,https://app.example.com" — empty = allow all
+
     N8N_WEBHOOK_SECRET: str = ""
     SECRET_KEY: str = "change-me-in-production"
 

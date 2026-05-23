@@ -46,8 +46,12 @@ export const api = {
   getProducts: () => call<Product[]>('/api/products'),
   createProduct: (data: { name: string; price: number; stock?: number; description?: string; category?: string }) =>
     call('/api/products', { method: 'POST', body: JSON.stringify(data) }),
+  deleteProduct: (id: number) =>
+    call(`/api/products/${id}`, { method: 'DELETE' }),
 
   getFAQs: () => call<FAQ[]>('/api/faqs'),
   createFAQ: (data: { question: string; answer: string; category?: string }) =>
     call('/api/faqs', { method: 'POST', body: JSON.stringify(data) }),
+  deleteFAQ: (id: number) =>
+    call(`/api/faqs/${id}`, { method: 'DELETE' }),
 };

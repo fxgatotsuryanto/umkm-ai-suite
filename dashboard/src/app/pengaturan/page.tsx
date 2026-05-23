@@ -63,6 +63,10 @@ function PengaturanContent() {
     } catch {} finally { setSavingProd(false); }
   };
 
+  const deleteProduct = async (id: number) => {
+    try { await api.deleteProduct(id); setProducts(await api.getProducts()); } catch {}
+  };
+
   const addFAQ = async () => {
     if (!nf.question || !nf.answer) return;
     setSavingFAQ(true);
@@ -72,6 +76,10 @@ function PengaturanContent() {
       setFaqs(await api.getFAQs());
       setSavedFAQ(true); setTimeout(() => setSavedFAQ(false), 2000);
     } catch {} finally { setSavingFAQ(false); }
+  };
+
+  const deleteFAQ = async (id: number) => {
+    try { await api.deleteFAQ(id); setFaqs(await api.getFAQs()); } catch {}
   };
 
   const saveProfile = async () => {
@@ -160,7 +168,16 @@ function PengaturanContent() {
                       </p>
                       {p.description && <p className="text-xs text-slate-400 truncate mt-0.5">{p.description}</p>}
                     </div>
-                    <span className="flex-shrink-0 ml-3 text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Aktif</span>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                      <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Aktif</span>
+                      <button
+                        onClick={() => deleteProduct(p.id)}
+                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-slate-300 hover:text-red-500"
+                        title="Hapus produk"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -210,7 +227,16 @@ function PengaturanContent() {
               <div className="space-y-3">
                 {faqs.map(f => (
                   <div key={f.id} className="p-3.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
-                    <p className="text-sm font-semibold text-slate-800">❓ {f.question}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-800">❓ {f.question}</p>
+                      <button
+                        onClick={() => deleteFAQ(f.id)}
+                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-slate-300 hover:text-red-500 flex-shrink-0"
+                        title="Hapus FAQ"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                     <p className="text-sm text-slate-600 mt-1 leading-relaxed">💬 {f.answer}</p>
                     <span className="inline-block mt-2 text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full capitalize">{f.category}</span>
                   </div>
