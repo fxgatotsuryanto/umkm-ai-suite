@@ -112,11 +112,11 @@ export default function WAPage() {
                 <button
                   key={num}
                   onClick={() => setSelected(num)}
-                  className={`w-full text-left p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-50 border-l-[3px] border-l-indigo-500' : ''}`}
+                  className={`w-full text-left p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${isSelected ? 'bg-teal-50 border-l-[3px] border-l-teal-500' : ''}`}
                 >
                   <div className="flex items-center gap-3">
                     <div className="relative">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center font-bold text-white text-sm flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center font-bold text-white text-sm flex-shrink-0">
                         {(latest.customer_name || num)[0].toUpperCase()}
                       </div>
                       <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-white" />
@@ -163,7 +163,7 @@ export default function WAPage() {
             {/* Chat Header */}
             <div className="bg-white border-b border-slate-200 px-5 py-3.5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center font-bold text-white text-sm">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center font-bold text-white text-sm">
                   {selectedName[0]?.toUpperCase()}
                 </div>
                 <div>
@@ -206,7 +206,7 @@ export default function WAPage() {
                       <p className="text-xs text-slate-400 mb-1 mr-1 text-right">
                         🤖 AI · {chat.tokens_used} token
                       </p>
-                      <div className="bg-indigo-600 rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
+                      <div className="bg-teal-600 rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
                         <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{chat.message_out}</p>
                       </div>
                     </div>

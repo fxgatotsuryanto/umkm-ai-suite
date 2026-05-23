@@ -156,7 +156,7 @@ function PengaturanContent() {
                       <p className="text-xs text-slate-500 mt-0.5">
                         <span className="font-medium text-slate-700">Rp{p.price.toLocaleString('id-ID')}</span>
                         {' · '}Stok: {p.stock}
-                        {p.category && <> · <span className="text-indigo-600">{p.category}</span></>}
+                        {p.category && <> · <span className="text-teal-600">{p.category}</span></>}
                       </p>
                       {p.description && <p className="text-xs text-slate-400 truncate mt-0.5">{p.description}</p>}
                     </div>
@@ -212,7 +212,7 @@ function PengaturanContent() {
                   <div key={f.id} className="p-3.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
                     <p className="text-sm font-semibold text-slate-800">❓ {f.question}</p>
                     <p className="text-sm text-slate-600 mt-1 leading-relaxed">💬 {f.answer}</p>
-                    <span className="inline-block mt-2 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full capitalize">{f.category}</span>
+                    <span className="inline-block mt-2 text-xs text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full capitalize">{f.category}</span>
                   </div>
                 ))}
               </div>

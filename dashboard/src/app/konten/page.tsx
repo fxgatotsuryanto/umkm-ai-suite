@@ -24,7 +24,7 @@ function CopyBtn({ text, label = 'Salin' }: { text: string; label?: string }) {
   return (
     <button
       onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-500 hover:text-indigo-600"
+      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-500 hover:text-teal-600"
     >
       {copied ? <><Check size={12} className="text-green-500" /> Tersalin!</> : <><Copy size={12} /> {label}</>}
     </button>
@@ -91,7 +91,7 @@ export default function KontenPage() {
         <div className="lg:col-span-2">
           <div className="card p-5 sticky top-6">
             <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <Sparkles size={16} className="text-indigo-600" /> Buat Konten Baru
+              <Sparkles size={16} className="text-teal-600" /> Buat Konten Baru
             </h2>
 
             {/* Platform selector */}
@@ -104,7 +104,7 @@ export default function KontenPage() {
                     onClick={() => setForm(f => ({ ...f, platform: p.id }))}
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
                       form.platform === p.id
-                        ? 'border-indigo-400 bg-indigo-50 text-indigo-700 shadow-sm'
+                        ? 'border-teal-400 bg-teal-50 text-teal-700 shadow-sm'
                         : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
@@ -176,7 +176,7 @@ export default function KontenPage() {
         <div className="lg:col-span-3 space-y-5">
           {/* Generated result */}
           {result && (
-            <div className="card overflow-hidden border-2 border-indigo-200">
+            <div className="card overflow-hidden border-2 border-teal-200">
               {/* Platform header */}
               <div className={`bg-gradient-to-r ${PLATFORM_COLORS[result.platform] ?? 'from-slate-700 to-slate-800'} px-5 py-4 text-white`}>
                 <div className="flex items-center justify-between">
@@ -210,8 +210,8 @@ export default function KontenPage() {
                       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Hashtag</p>
                       <CopyBtn text={result.hashtags} />
                     </div>
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-                      <p className="text-sm text-indigo-700 leading-relaxed">{result.hashtags}</p>
+                    <div className="bg-teal-50 border border-teal-100 rounded-xl p-3">
+                      <p className="text-sm text-teal-700 leading-relaxed">{result.hashtags}</p>
                     </div>
                   </div>
                 )}

@@ -3,17 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, MessageSquare, Sparkles, Settings, Coins, Zap } from 'lucide-react';
-import { api, type Balance, type Profile } from '@/lib/api';
+import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap } from 'lucide-react';
+import { api, type Balance } from '@/lib/api';
 
 const navItems = [
-  { href: '/',           label: 'Dashboard',        icon: LayoutDashboard },
-  { href: '/wa',         label: 'WA Auto-Reply',     icon: MessageSquare },
-  { href: '/konten',     label: 'Konten Marketing',  icon: Sparkles },
-  { href: '/pengaturan', label: 'Pengaturan',        icon: Settings },
+  { href: '/',           label: 'Dashboard',           icon: LayoutDashboard },
+  { href: '/wa',         label: 'WhatsApp Auto-Reply',  icon: MessageSquare  },
+  { href: '/konten',     label: 'Content Marketing',    icon: PenSquare      },
+  { href: '/pengaturan', label: 'Settings',             icon: Settings       },
 ];
 
-const PACKAGE_MAX: Record<string, number> = { starter: 500, growth: 1500, pro: 99999 };
+const PACKAGE_MAX: Record<string, number> = { starter: 500, growth: 5000, pro: 99999 };
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -22,71 +22,74 @@ export default function Sidebar() {
 
   useEffect(() => {
     api.getBalance().then(setBalance).catch(() => {});
-    api.getProfile().then(d => {
-      if ('name' in d && d.name) setStoreName(d.name);
-    }).catch(() => {});
+    api.getProfile().then(d => { if ('name' in d && d.name) setStoreName(d.name); }).catch(() => {});
   }, []);
 
   const max = PACKAGE_MAX[balance?.package ?? 'starter'] ?? 500;
   const pct = balance ? Math.min(100, (balance.balance / max) * 100) : 0;
-  const low = balance ? balance.balance < 50 : false;
+  const remaining = balance ? Math.max(0, max - balance.balance) : 0;
 
   return (
-    <aside className="flex flex-col w-64 min-h-screen bg-slate-900 text-white flex-shrink-0">
+    <aside className="flex flex-col w-64 min-h-screen flex-shrink-0" style={{ backgroundColor: '#042f2e' }}>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-4 bg-slate-800 border-b border-slate-700/60">
-        <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center flex-shrink-0">
+      <div className="flex items-center gap-3 px-6 py-5">
+        <div className="w-9 h-9 rounded-xl bg-teal-500 flex items-center justify-center flex-shrink-0">
           <Zap size={18} className="text-white" />
         </div>
-        <div className="min-w-0">
-          <p className="font-bold text-sm text-white leading-tight">UMKM AI Suite</p>
-          <p className="text-xs text-slate-400 truncate">{storeName}</p>
-        </div>
+        <span className="font-bold text-base text-white tracking-tight">UMKM AI Suite</span>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">Menu</p>
+      <nav className="flex-1 px-3 pt-2 space-y-0.5">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname === href;
           return (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 active
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-teal-700/80 text-white'
+                  : 'text-teal-100/60 hover:bg-teal-800/40 hover:text-teal-100'
               }`}
             >
-              <Icon size={17} />
+              <Icon size={18} />
               {label}
             </Link>
           );
         })}
       </nav>
 
-      {/* Token Footer */}
-      <div className="px-3 py-4 border-t border-slate-700/60">
-        <div className="bg-slate-800 rounded-xl p-3">
+      {/* Token Card */}
+      <div className="px-4 pb-6 pt-2">
+        <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 flex items-center gap-1.5">
-              <Coins size={12} /> Saldo Token
+            <span className="text-xs font-semibold text-teal-300">Saldo Token</span>
+            <span className="text-xs font-bold text-white">{Math.round(pct)}%</span>
+          </div>
+          <div className="flex items-end gap-1.5 mb-2">
+            <span className="text-2xl font-bold text-white leading-none">
+              {balance?.balance.toLocaleString('id-ID') ?? '0'}
             </span>
-            <span className={`text-xs font-bold ${low ? 'text-red-400' : 'text-indigo-300'}`}>
-              {balance?.balance.toLocaleString() ?? '—'}
+            <span className="text-xs text-teal-400 mb-0.5">
+              / {max === 99999 ? '∞' : max.toLocaleString('id-ID')}
             </span>
           </div>
-          <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full rounded-full h-2 mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
             <div
-              className={`h-1.5 rounded-full transition-all ${low ? 'bg-red-500' : 'bg-indigo-500'}`}
-              style={{ width: `${pct}%` }}
+              className="h-2 rounded-full transition-all"
+              style={{ width: `${pct}%`, backgroundColor: '#2dd4bf' }}
             />
           </div>
-          <div className="flex items-center justify-between mt-1.5">
-            <span className="text-xs text-slate-500 capitalize">{balance?.package ?? 'starter'}</span>
-            {low && <span className="text-xs text-red-400">Token hampir habis</span>}
-          </div>
+          <p className="text-xs text-teal-400 mb-3">
+            Tersisa: {remaining.toLocaleString('id-ID')} Token
+          </p>
+          <Link
+            href="/pengaturan"
+            className="block w-full text-center bg-teal-500 hover:bg-teal-400 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
+          >
+            Isi Ulang
+          </Link>
         </div>
       </div>
     </aside>
