@@ -6,7 +6,7 @@ from backend.config import settings
 from backend.db.models import BusinessProfile, ChatHistory, FAQ, Product
 from backend.modules.token_middleware import deduct_token
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
 
 
 async def _build_context(db: AsyncSession) -> str:

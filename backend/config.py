@@ -8,12 +8,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./umkm_local.db"
 
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENAI_MODEL: str = "meta-llama/llama-3.1-8b-instruct:free"
 
     CLOUD_API_URL: str = "https://your-cloud.railway.app"
     CLOUD_API_KEY: str = ""
 
     N8N_WEBHOOK_SECRET: str = ""
+    SECRET_KEY: str = "change-me-in-production"
 
     BUSINESS_NAME: str = "UMKM Saya"
     BUSINESS_TYPE: str = "retail"

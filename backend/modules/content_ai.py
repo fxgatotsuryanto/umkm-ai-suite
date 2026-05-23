@@ -8,7 +8,7 @@ from backend.config import settings
 from backend.db.models import BusinessProfile, ContentLibrary, Product
 from backend.modules.token_middleware import deduct_token
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
 
 PLATFORM_STYLES = {
     "instagram": "Visual, engaging, emoji-heavy, hashtag-rich. Maksimal 2200 karakter. Hook kuat di awal.",
@@ -82,10 +82,15 @@ Buat dalam Bahasa Indonesia yang natural, menarik, dan sesuai karakter platform 
         messages=[{"role": "user", "content": prompt}],
         max_tokens=800,
         temperature=0.8,
-        response_format={"type": "json_object"},
     )
 
-    result = json.loads(response.choices[0].message.content)
+    raw = response.choices[0].message.content
+    # Strip markdown code fences if model wraps output in ```json ... ```
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    result = json.loads(raw.strip())
 
     record = ContentLibrary(
         platform=platform,
