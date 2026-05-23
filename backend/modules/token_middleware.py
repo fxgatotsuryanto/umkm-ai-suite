@@ -79,6 +79,23 @@ async def get_unsynced_transactions(db: AsyncSession) -> list:
     return result.scalars().all()
 
 
+async def refund_token(db: AsyncSession, action: str, reference_id: str = "") -> int:
+    cost = TOKEN_COSTS.get(action, 1)
+    token = await _get_or_create_balance(db)
+    token.balance += cost
+    ledger = TokenLedger(
+        action=f"{action}_refund",
+        amount=cost,
+        balance_after=token.balance,
+        reference_id=reference_id,
+        synced=True,
+    )
+    db.add(ledger)
+    await db.commit()
+    await db.refresh(token)
+    return token.balance
+
+
 async def mark_synced(db: AsyncSession, ledger_ids: list[int]) -> None:
     result = await db.execute(
         select(TokenLedger).where(TokenLedger.id.in_(ledger_ids))

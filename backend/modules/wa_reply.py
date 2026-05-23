@@ -1,10 +1,14 @@
-from openai import AsyncOpenAI
+import logging
+
+from openai import AsyncOpenAI, APIConnectionError, APIStatusError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.db.models import BusinessProfile, ChatHistory, FAQ, Product
-from backend.modules.token_middleware import deduct_token
+from backend.modules.token_middleware import deduct_token, refund_token
+
+logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
 
@@ -71,15 +75,43 @@ Aturan:
 5. Jika ada pertanyaan harga, sebutkan langsung
 6. Gunakan emoji secukupnya agar terasa personal"""
 
-    response = await client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ],
-        max_tokens=500,
-        temperature=0.7,
-    )
+    try:
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            max_tokens=500,
+            temperature=0.7,
+        )
+    except APIConnectionError as e:
+        await refund_token(db, "wa_reply", reference_id=wa_number)
+        logger.error("OpenRouter connection error: %s", e)
+        return {
+            "success": False,
+            "reply": "Maaf, AI sedang tidak dapat dihubungi. Silakan coba lagi.",
+            "tokens_used": 0,
+            "error": str(e),
+        }
+    except APIStatusError as e:
+        await refund_token(db, "wa_reply", reference_id=wa_number)
+        logger.error("OpenRouter API error %s: %s", e.status_code, e.message)
+        return {
+            "success": False,
+            "reply": "Maaf, terjadi kesalahan pada layanan AI. Silakan coba lagi.",
+            "tokens_used": 0,
+            "error": f"{e.status_code}: {e.message}",
+        }
+    except Exception as e:
+        await refund_token(db, "wa_reply", reference_id=wa_number)
+        logger.exception("Unexpected error calling AI provider")
+        return {
+            "success": False,
+            "reply": "Maaf, terjadi kesalahan tidak terduga.",
+            "tokens_used": 0,
+            "error": str(e),
+        }
 
     reply = response.choices[0].message.content
 

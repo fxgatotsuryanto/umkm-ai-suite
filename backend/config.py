@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://openrouter.ai/api/v1"
-    OPENAI_MODEL: str = "meta-llama/llama-3.1-8b-instruct:free"
+    OPENAI_MODEL: str = "google/gemini-flash-1.5"
 
     CLOUD_API_URL: str = "https://your-cloud.railway.app"
     CLOUD_API_KEY: str = ""
