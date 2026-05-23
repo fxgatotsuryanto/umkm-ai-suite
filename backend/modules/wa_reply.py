@@ -52,6 +52,15 @@ async def generate_wa_reply(
     message: str,
     customer_name: str = "",
 ) -> dict:
+    message = message.strip()
+    if not message:
+        return {
+            "success": False,
+            "reply": "Pesan tidak boleh kosong.",
+            "tokens_used": 0,
+            "error": "Pesan masuk kosong atau hanya spasi.",
+        }
+
     token_ok = await deduct_token(db, "wa_reply", reference_id=wa_number)
     if not token_ok:
         return {

@@ -49,6 +49,15 @@ async def generate_content(
     topic: str = "",
     product_id: int | None = None,
 ) -> dict:
+    platform = platform.strip()
+    content_type = content_type.strip()
+    topic = topic.strip()
+
+    if not platform:
+        return {"success": False, "content": None, "error": "Platform tidak boleh kosong."}
+    if not content_type:
+        return {"success": False, "content": None, "error": "Jenis konten tidak boleh kosong."}
+
     token_ok = await deduct_token(db, "content_generate")
     if not token_ok:
         return {
@@ -59,7 +68,7 @@ async def generate_content(
 
     profile_result = await db.execute(select(BusinessProfile).limit(1))
     profile = profile_result.scalar_one_or_none()
-    business_name = profile.name if profile else settings.BUSINESS_NAME
+    business_name = (profile.name if profile else settings.BUSINESS_NAME).strip() or "Toko Kami"
 
     product_info = ""
     if product_id:
@@ -77,21 +86,30 @@ async def generate_content(
     platform_style = PLATFORM_STYLES.get(platform, PLATFORM_STYLES["instagram"])
     type_desc = CONTENT_TYPE_DESC.get(content_type, content_type)
 
-    prompt = f"""Buat {type_desc} untuk platform {platform.upper()} milik bisnis "{business_name}".
+    extra_lines = []
+    if product_info.strip():
+        extra_lines.append(product_info.strip())
+    if topic:
+        extra_lines.append(f"Topik/Tema: {topic}")
+    extra_block = ("\n" + "\n".join(extra_lines)) if extra_lines else ""
 
-Panduan gaya {platform.upper()}: {platform_style}
-{product_info}
-{f"Topik/Tema: {topic}" if topic else ""}
+    prompt = (
+        f'Buat {type_desc} untuk platform {platform.upper()} milik bisnis "{business_name}".\n\n'
+        f"Panduan gaya {platform.upper()}: {platform_style}"
+        f"{extra_block}\n\n"
+        "Kembalikan output dalam format JSON berikut (tanpa markdown code fence):\n"
+        "{\n"
+        '  "title": "judul singkat konten (max 10 kata)",\n'
+        '  "content": "isi konten utama sesuai platform",\n'
+        '  "hashtags": "#tag1 #tag2 #tag3 (5-10 hashtag relevan)",\n'
+        '  "cta": "call to action yang jelas dan actionable"\n'
+        "}\n\n"
+        "Buat dalam Bahasa Indonesia yang natural, menarik, dan sesuai karakter platform tersebut."
+    )
 
-Kembalikan output dalam format JSON berikut (tanpa markdown code fence):
-{{
-  "title": "judul singkat konten (max 10 kata)",
-  "content": "isi konten utama sesuai platform",
-  "hashtags": "#tag1 #tag2 #tag3 (5-10 hashtag relevan)",
-  "cta": "call to action yang jelas dan actionable"
-}}
-
-Buat dalam Bahasa Indonesia yang natural, menarik, dan sesuai karakter platform tersebut."""
+    if not prompt.strip():
+        await refund_token(db, "content_generate")
+        return {"success": False, "content": None, "error": "Gagal membangun prompt konten."}
 
     try:
         response = await client.chat.completions.create(
