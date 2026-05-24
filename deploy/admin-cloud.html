@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UMKM AI Suite — Admin</title>
+<style>
+/* ══ RESET & VARS ══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --sb:    #042f2e;
+  --sb2:   rgba(255,255,255,.06);
+  --acc:   #14b8a6;
+  --acc2:  #0d9488;
+  --acc-l: #f0fdfa;
+  --page:  #f1f5f9;
+  --card:  #fff;
+  --bdr:   #e2e8f0;
+  --text:  #0f172a;
+  --muted: #64748b;
+  --ok:    #22c55e;
+  --ok-l:  #f0fdf4;
+  --err:   #ef4444;
+  --err-l: #fef2f2;
+  --warn:  #f59e0b;
+  --warn-l:#fffbeb;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  background: var(--page);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ══ LOGIN ═════════════════════════════════════════════════════ */
+#login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sb);
+}
+.login-card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 40px;
+  width: 420px;
+  max-width: 95vw;
+  box-shadow: 0 30px 60px rgba(0,0,0,.35);
+}
+.lcard-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 30px;
+}
+.lcard-logo .icon-box {
+  width: 44px; height: 44px;
+  background: var(--acc);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.lcard-logo h1 { font-size: 17px; font-weight: 700; color: var(--sb); line-height: 1.2; }
+.lcard-logo p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+#login label {
+  display: block;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-bottom: 7px;
+}
+#login input {
+  width: 100%;
+  border: 1.5px solid var(--bdr);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .15s;
+}
+#login input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(20,184,166,.12); }
+#login-btn {
+  width: 100%;
+  margin-top: 16px;
+  background: var(--acc);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+#login-btn:hover:not(:disabled) { background: var(--acc2); }
+#login-btn:disabled { opacity: .6; cursor: not-allowed; }
+#login-err {
+  display: none;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--err-l);
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: 13px;
+}
+
+/* ══ APP SHELL ═════════════════════════════════════════════════ */
+#app  { display: none; min-height: 100vh; }
+.layout { display: flex; min-height: 100vh; }
+
+/* ══ SIDEBAR ══════════════════════════════════════════════════ */
+.sidebar {
+  width: 240px;
+  background: var(--sb);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.sb-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.sb-logo .icon-box {
+  width: 34px; height: 34px;
+  background: var(--acc);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.sb-logo span  { display: block; font-size: 13px; font-weight: 700; color: #fff; line-height: 1.2; }
+.sb-logo small { font-size: 10px; color: rgba(255,255,255,.35); text-transform: uppercase; letter-spacing: .08em; }
+.sb-nav {
+  flex: 1;
+  padding: 10px 8px;
+  overflow-y: auto;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: rgba(255,255,255,.45);
+  font-size: 13px; font-weight: 500;
+  transition: all .15s;
+  margin-bottom: 1px;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.8); }
+.nav-item.active { background: rgba(20,184,166,.2); color: var(--acc); }
+.nav-icon { font-size: 15px; width: 20px; text-align: center; }
+.sb-footer {
+  padding: 10px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.sb-footer button {
+  width: 100%;
+  padding: 9px 12px;
+  background: rgba(255,255,255,.05);
+  border: none;
+  border-radius: 9px;
+  color: rgba(255,255,255,.45);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  transition: all .15s;
+}
+.sb-footer button:hover { background: rgba(239,68,68,.15); color: #fca5a5; }
+
+/* ══ MAIN ══════════════════════════════════════════════════════ */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-x: hidden; }
+.topbar {
+  background: #fff;
+  border-bottom: 1px solid var(--bdr);
+  padding: 15px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar h1 { font-size: 18px; font-weight: 700; color: var(--text); }
+.topbar p  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.topbar-right { display: flex; gap: 8px; align-items: center; }
+.badge-admin {
+  background: var(--acc-l);
+  color: var(--acc2);
+  font-size: 11px; font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.icon-btn {
+  width: 34px; height: 34px;
+  border: 1px solid var(--bdr);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  transition: background .15s;
+}
+.icon-btn:hover { background: #f8fafc; }
+.content { padding: 28px; flex: 1; }
+
+/* ══ SECTIONS ══════════════════════════════════════════════════ */
+.sec { display: none; }
+.sec.active { display: block; }
+
+/* ══ CARDS ═════════════════════════════════════════════════════ */
+.card {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.card h2 { font-size: 14px; font-weight: 700; margin-bottom: 16px; }
+
+/* ══ STAT CARDS ════════════════════════════════════════════════ */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+.stat-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+.stat-v { font-size: 26px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+.stat-l { font-size: 12px; color: var(--muted); }
+
+/* ══ LAYOUT HELPERS ════════════════════════════════════════════ */
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.g3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+.mb-4 { margin-bottom: 16px; }
+.mb-6 { margin-bottom: 24px; }
+.row  { display: flex; align-items: center; gap: 10px; }
+
+/* ══ TABLE ══════════════════════════════════════════════════════ */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table th {
+  text-align: left;
+  padding: 9px 14px;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em;
+  border-bottom: 1px solid var(--bdr);
+  background: #f8fafc;
+  white-space: nowrap;
+}
+table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+table tr:last-child td { border-bottom: none; }
+table tr:hover td { background: #fafafa; }
+
+/* ══ BADGES ═════════════════════════════════════════════════════ */
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.b-ok   { background: var(--ok-l);  color: #15803d; }
+.b-err  { background: var(--err-l); color: #b91c1c; }
+.b-warn { background: var(--warn-l);color: #92400e; }
+.b-info { background: var(--acc-l); color: var(--acc2); }
+.b-gray { background: #f1f5f9;      color: var(--muted); }
+
+/* ══ BUTTONS ════════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 700;
+  cursor: pointer; border: none;
+  transition: all .15s;
+  text-decoration: none;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-p  { background: var(--acc);  color: #fff; }
+.btn-p:hover  { background: var(--acc2); }
+.btn-e  { background: var(--err-l); color: #dc2626; border: 1px solid #fecaca; }
+.btn-e:hover  { background: #fee2e2; }
+.btn-ok { background: var(--ok-l);  color: #15803d; border: 1px solid #bbf7d0; }
+.btn-ok:hover { background: #dcfce7; }
+.btn-g  { background: transparent; color: var(--muted); border: 1px solid var(--bdr); }
+.btn-g:hover  { background: #f8fafc; }
+
+/* ══ FORM CONTROLS ══════════════════════════════════════════════ */
+.fg { margin-bottom: 14px; }
+.fg label {
+  display: block;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em;
+  margin-bottom: 6px;
+}
+.fc {
+  width: 100%;
+  border: 1.5px solid var(--bdr);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 13px;
+  background: #fff; color: var(--text);
+  outline: none;
+  transition: border-color .15s;
+}
+.fc:focus { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(20,184,166,.1); }
+.sel-sm {
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none; cursor: pointer; background: #fff;
+}
+
+/* ══ CHART ══════════════════════════════════════════════════════ */
+.chart-wrap { background: #f8fafc; border-radius: 10px; padding: 16px; margin-top: 12px; }
+#chart-svg { width: 100%; height: 150px; display: block; overflow: visible; }
+
+/* ══ AMOUNTS ════════════════════════════════════════════════════ */
+.pos { color: #15803d; font-weight: 700; }
+.neg { color: #b91c1c; font-weight: 700; }
+
+/* ══ EMPTY STATE ════════════════════════════════════════════════ */
+.empty { text-align: center; padding: 36px; color: var(--muted); }
+.empty .ei { font-size: 36px; margin-bottom: 8px; }
+.empty p { font-size: 13px; }
+
+/* ══ LOG ITEM ═══════════════════════════════════════════════════ */
+.log-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+}
+.log-item:last-child { border-bottom: none; }
+.log-name { font-weight: 600; }
+.log-meta { color: var(--muted); font-size: 11px; margin-top: 1px; }
+
+/* ══ REVENUE BAR ════════════════════════════════════════════════ */
+.rev-bar-bg { background: #f1f5f9; border-radius: 4px; height: 6px; overflow: hidden; margin-top: 6px; }
+.rev-bar    { height: 6px; border-radius: 4px; background: var(--acc); }
+
+/* ══ SEARCH ═════════════════════════════════════════════════════ */
+.search-wrap { position: relative; }
+.search-wrap::before {
+  content: '🔍';
+  position: absolute; left: 10px; top: 50%;
+  transform: translateY(-50%); font-size: 12px; pointer-events: none;
+}
+.search-wrap input { padding-left: 34px; }
+
+/* ══ COPY BTN ═══════════════════════════════════════════════════ */
+.key-box {
+  background: #e0f2fe;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-family: monospace;
+  word-break: break-all;
+  color: #0369a1;
+  position: relative;
+  cursor: pointer;
+  user-select: all;
+}
+.key-box:hover { background: #bae6fd; }
+
+/* ══ MODAL ══════════════════════════════════════════════════════ */
+#modal {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 480px; max-width: 95vw;
+  box-shadow: 0 25px 60px rgba(0,0,0,.25);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px;
+}
+.modal-head h3 { font-size: 16px; font-weight: 700; }
+
+/* ══ TOAST ══════════════════════════════════════════════════════ */
+#toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: #0f172a; color: #fff;
+  padding: 11px 18px;
+  border-radius: 10px;
+  font-size: 13px; font-weight: 500;
+  opacity: 0; transform: translateY(8px);
+  transition: all .25s;
+  pointer-events: none; z-index: 200;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+
+/* ══ LOADING ════════════════════════════════════════════════════ */
+.sk { background: linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%); background-size: 200% 100%; animation: sh 1.5s infinite; border-radius: 5px; }
+@keyframes sh { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+.sk-row { height: 44px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN ═══════════════════════════════════════════════════ -->
+<div id="login">
+  <div class="login-card">
+    <div class="lcard-logo">
+      <div class="icon-box">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div>
+        <h1>UMKM AI Suite</h1>
+        <p>Admin Dashboard — Akses Terbatas</p>
+      </div>
+    </div>
+    <form onsubmit="doLogin(event)">
+      <label for="inp-key">Master API Key</label>
+      <input type="password" id="inp-key" placeholder="Masukkan master key..." autocomplete="current-password" required>
+      <button type="submit" id="login-btn">Masuk ke Dashboard</button>
+      <div id="login-err"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ APP ═════════════════════════════════════════════════════ -->
+<div id="app">
+ <div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <div class="icon-box">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div>
+        <span>UMKM AI Suite</span>
+        <small>Admin Panel</small>
+      </div>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-item active" data-s="overview"     onclick="navigate('overview')">
+        <span class="nav-icon">📊</span> Overview
+      </button>
+      <button class="nav-item" data-s="users"          onclick="navigate('users')">
+        <span class="nav-icon">👥</span> Users &amp; Lisensi
+      </button>
+      <button class="nav-item" data-s="tokens"         onclick="navigate('tokens')">
+        <span class="nav-icon">🪙</span> Token Management
+      </button>
+      <button class="nav-item" data-s="transactions"   onclick="navigate('transactions')">
+        <span class="nav-icon">💳</span> Transaksi
+      </button>
+      <button class="nav-item" data-s="revenue"        onclick="navigate('revenue')">
+        <span class="nav-icon">📈</span> Revenue
+      </button>
+      <button class="nav-item" data-s="settings"       onclick="navigate('settings')">
+        <span class="nav-icon">⚙️</span> Settings
+      </button>
+    </nav>
+    <div class="sb-footer">
+      <button onclick="doLogout()"><span>🚪</span> Keluar</button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="pg-title">Overview</h1>
+        <p  id="pg-sub">Ringkasan aktivitas sistem</p>
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" onclick="refreshSection()" title="Refresh data">🔄</button>
+        <span class="badge-admin">🔑 Admin</span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ── OVERVIEW ────────────────────────────────────────── -->
+      <div id="sec-overview" class="sec active">
+        <div class="stats-grid" id="ov-stats">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#eff6ff">👥</div>
+            <div class="stat-v" id="ov-users">—</div>
+            <div class="stat-l">Total Users</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:var(--ok-l)">✅</div>
+            <div class="stat-v" id="ov-active">—</div>
+            <div class="stat-l">Users Aktif</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:var(--warn-l)">🪙</div>
+            <div class="stat-v" id="ov-tokens">—</div>
+            <div class="stat-l">Token Terpakai Hari Ini</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:var(--acc-l)">💰</div>
+            <div class="stat-v" id="ov-rev">—</div>
+            <div class="stat-l">Revenue Bulan Ini</div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>📊 Pemakaian Token — 7 Hari Terakhir</h2>
+          <div class="chart-wrap">
+            <svg id="chart-svg" viewBox="0 0 500 130" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── USERS ───────────────────────────────────────────── -->
+      <div id="sec-users" class="sec">
+        <div class="row mb-4">
+          <div class="search-wrap" style="flex:1; max-width:300px;">
+            <input type="text" id="user-search" class="fc" placeholder="Cari nama toko / email..." oninput="filterUsers()">
+          </div>
+          <button class="btn btn-p" onclick="openModal()">+ Terbitkan Lisensi</button>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nama Toko</th>
+                  <th>Email</th>
+                  <th>Paket</th>
+                  <th>Saldo Token</th>
+                  <th>Expired</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="users-tb">
+                <tr><td colspan="7"><div class="sk sk-row"></div><div class="sk sk-row"></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TOKENS ──────────────────────────────────────────── -->
+      <div id="sec-tokens" class="sec">
+        <div class="g2">
+          <div class="card">
+            <h2>🪙 Sesuaikan Token User</h2>
+            <form onsubmit="submitAdjust(event)">
+              <div class="fg">
+                <label>Pilih User</label>
+                <select id="tk-user" class="fc" required>
+                  <option value="">— Pilih User —</option>
+                </select>
+              </div>
+              <div class="fg">
+                <label>Jumlah Token</label>
+                <input type="number" id="tk-amount" class="fc" placeholder="Positif = tambah, negatif = kurangi" required>
+              </div>
+              <div class="fg">
+                <label>Tipe Penyesuaian</label>
+                <select id="tk-type" class="fc">
+                  <option value="manual_topup">➕ Top-up Manual</option>
+                  <option value="manual_deduct">➖ Kurangi Manual</option>
+                  <option value="bonus">🎁 Bonus</option>
+                  <option value="refund">↩️ Refund</option>
+                  <option value="correction">🔧 Koreksi</option>
+                </select>
+              </div>
+              <div class="fg">
+                <label>Catatan</label>
+                <input type="text" id="tk-reason" class="fc" placeholder="cth: Topup via transfer BCA konfirmasi">
+              </div>
+              <button type="submit" class="btn btn-p" id="tk-btn" style="width:100%;">
+                Terapkan Perubahan
+              </button>
+            </form>
+          </div>
+          <div class="card" style="overflow:hidden;">
+            <h2>📋 Log Penyesuaian Manual</h2>
+            <div id="tk-log"><div class="empty"><div class="ei">📝</div><p>Belum ada penyesuaian manual</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TRANSACTIONS ────────────────────────────────────── -->
+      <div id="sec-transactions" class="sec">
+        <div class="row mb-4">
+          <select id="tx-type" class="fc" style="width:200px;" onchange="loadTx()">
+            <option value="">Semua Tipe</option>
+            <option value="wa_reply">WA Reply</option>
+            <option value="content_generate">Content Generate</option>
+            <option value="manual_topup">Topup Manual</option>
+            <option value="topup">Topup</option>
+            <option value="bonus">Bonus</option>
+            <option value="refund">Refund</option>
+          </select>
+          <span id="tx-count" style="font-size:12px; color:var(--muted); margin-left:4px;"></span>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>User / Bisnis</th>
+                  <th>Tipe</th>
+                  <th>Jumlah</th>
+                  <th>Saldo Setelah</th>
+                  <th>Catatan</th>
+                  <th>Waktu</th>
+                </tr>
+              </thead>
+              <tbody id="tx-tb">
+                <tr><td colspan="7"><div class="sk sk-row"></div><div class="sk sk-row"></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── REVENUE ─────────────────────────────────────────── -->
+      <div id="sec-revenue" class="sec">
+        <div class="g3 mb-6">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:var(--ok-l)">💰</div>
+            <div class="stat-v" id="rv-total">Rp0</div>
+            <div class="stat-l">Total Revenue (semua waktu)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#eff6ff">📦</div>
+            <div class="stat-v" id="rv-users">0</div>
+            <div class="stat-l">Total Pelanggan Berbayar</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:var(--acc-l)">📊</div>
+            <div class="stat-v" id="rv-avg">Rp0</div>
+            <div class="stat-l">Rata-rata Revenue / User</div>
+          </div>
+        </div>
+        <div class="g2">
+          <div class="card">
+            <h2>📦 Breakdown per Paket</h2>
+            <div id="rv-breakdown">
+              <div class="sk" style="height:60px; margin-bottom:12px;"></div>
+              <div class="sk" style="height:60px; margin-bottom:12px;"></div>
+              <div class="sk" style="height:60px;"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>📅 Pendapatan per Bulan</h2>
+            <div id="rv-monthly"><div class="empty"><div class="ei">📅</div><p>Belum ada data bulanan</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SETTINGS ────────────────────────────────────────── -->
+      <div id="sec-settings" class="sec">
+        <div style="max-width:580px; display:flex; flex-direction:column; gap:16px;">
+          <div class="card">
+            <h2>ℹ️ Informasi Server</h2>
+            <div id="srv-info" style="font-size:13px; line-height:2; color:var(--muted);">Memuat...</div>
+          </div>
+          <div class="card">
+            <h2>🔑 Update Session Key</h2>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+              Master key sebenarnya diatur via environment variable. Ini hanya memperbarui sesi browser kamu.
+            </p>
+            <div class="fg">
+              <label>Master Key Baru</label>
+              <input type="password" id="new-key" class="fc" placeholder="Master key baru...">
+            </div>
+            <button class="btn btn-p" onclick="updateKey()">Update Session Key</button>
+          </div>
+          <div class="card">
+            <h2>📦 Daftar Paket</h2>
+            <table>
+              <thead><tr><th>Paket</th><th>Token</th><th>Harga / Bulan</th></tr></thead>
+              <tbody id="pkg-tb"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.content -->
+  </div><!-- /.main -->
+ </div><!-- /.layout -->
+</div><!-- /#app -->
+
+<!-- ═══ MODAL: TERBITKAN LISENSI ════════════════════════════════ -->
+<div id="modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>🆕 Terbitkan Lisensi Baru</h3>
+      <button class="btn btn-g" style="padding:4px 10px;" onclick="closeModal()">✕</button>
+    </div>
+    <form onsubmit="submitIssue(event)">
+      <div class="fg">
+        <label>Nama Toko / Bisnis *</label>
+        <input type="text" id="iss-name"  class="fc" required placeholder="cth: Toko Batik Nusantara">
+      </div>
+      <div class="fg">
+        <label>Email *</label>
+        <input type="email" id="iss-email" class="fc" required placeholder="pemilik@email.com">
+      </div>
+      <div class="g2">
+        <div class="fg">
+          <label>Paket</label>
+          <select id="iss-pkg" class="fc">
+            <option value="starter">Starter — Rp49.000</option>
+            <option value="growth">Growth — Rp99.000</option>
+            <option value="pro">Pro — Rp199.000</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Durasi (bulan)</label>
+          <input type="number" id="iss-months" class="fc" value="1" min="1" max="24">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-p" id="iss-btn" style="width:100%;">Terbitkan Lisensi</button>
+    </form>
+    <div id="iss-result" style="display:none; margin-top:14px; background:var(--ok-l); border:1px solid #bbf7d0; border-radius:10px; padding:14px;">
+      <p style="font-size:12px; font-weight:700; color:#15803d; margin-bottom:8px;">✅ Lisensi berhasil diterbitkan!</p>
+      <p style="font-size:11px; color:var(--muted); margin-bottom:6px;">License Key (klik untuk salin):</p>
+      <div class="key-box" id="iss-key" onclick="copyKey()"></div>
+      <p style="font-size:11px; color:var(--muted); margin-top:8px;">Simpan dan kirim key ini ke pelanggan. Tidak bisa ditampilkan kembali.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TOAST ════════════════════════════════════════════════════ -->
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+const S = { key: '', section: 'overview', users: [] };
+
+const META = {
+  overview:     ['Overview',          'Ringkasan aktivitas sistem'],
+  users:        ['Users & Lisensi',   'Kelola semua lisensi aktif'],
+  tokens:       ['Token Management',  'Tambah atau kurangi token secara manual'],
+  transactions: ['Transaksi',         'Log semua transaksi token'],
+  revenue:      ['Revenue',           'Analisis pendapatan dan paket'],
+  settings:     ['Settings',          'Informasi server dan konfigurasi'],
+};
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = sessionStorage.getItem('umkm_akey');
+  if (saved) { S.key = saved; showApp(); }
+});
+
+// ════════════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════════════
+async function doLogin(e) {
+  e.preventDefault();
+  const key = document.getElementById('inp-key').value.trim();
+  if (!key) return;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-err');
+  btn.disabled = true; btn.textContent = 'Memverifikasi…';
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/admin/overview', { headers: { 'x-api-key': key } });
+    if (r.ok) {
+      S.key = key;
+      sessionStorage.setItem('umkm_akey', key);
+      showApp();
+    } else {
+      err.textContent = r.status === 403 ? 'Master API Key tidak valid.' : `Error ${r.status} — coba lagi.`;
+      err.style.display = 'block';
+    }
+  } catch {
+    err.textContent = 'Tidak dapat terhubung ke server.';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Masuk ke Dashboard';
+  }
+}
+
+function doLogout() {
+  sessionStorage.removeItem('umkm_akey');
+  S.key = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login').style.display = 'flex';
+}
+
+function showApp() {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  navigate('overview');
+}
+
+function updateKey() {
+  const k = document.getElementById('new-key').value.trim();
+  if (!k) return;
+  S.key = k; sessionStorage.setItem('umkm_akey', k);
+  toast('Session key diperbarui ✓');
+  document.getElementById('new-key').value = '';
+}
+
+// ════════════════════════════════════════════════════════════════
+// API HELPER
+// ════════════════════════════════════════════════════════════════
+async function api(path, opts = {}) {
+  try {
+    const r = await fetch(path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': S.key, ...(opts.headers || {}) },
+    });
+    if (r.status === 403) { doLogout(); return null; }
+    return await r.json();
+  } catch (err) {
+    toast('Koneksi gagal: ' + err.message);
+    return null;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════════════════
+function navigate(sec) {
+  S.section = sec;
+  document.querySelectorAll('.nav-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.s === sec));
+  document.querySelectorAll('.sec').forEach(el =>
+    el.classList.toggle('active', el.id === 'sec-' + sec));
+  const [t, s] = META[sec] || [sec, ''];
+  document.getElementById('pg-title').textContent = t;
+  document.getElementById('pg-sub').textContent   = s;
+  ({ overview: loadOverview, users: loadUsers, tokens: loadTokens,
+     transactions: loadTx, revenue: loadRevenue, settings: loadSettings })[sec]?.();
+}
+
+function refreshSection() { navigate(S.section); }
+
+// ════════════════════════════════════════════════════════════════
+// OVERVIEW
+// ════════════════════════════════════════════════════════════════
+async function loadOverview() {
+  const d = await api('/admin/overview');
+  if (!d) return;
+  document.getElementById('ov-users').textContent  = d.total_users;
+  document.getElementById('ov-active').textContent = d.active_users;
+  document.getElementById('ov-tokens').textContent = d.tokens_today.toLocaleString('id-ID');
+  document.getElementById('ov-rev').textContent    = 'Rp' + d.revenue_month.toLocaleString('id-ID');
+  renderChart(d.daily_stats || []);
+}
+
+function renderChart(data) {
+  const svg = document.getElementById('chart-svg');
+  if (!data.length) {
+    svg.innerHTML = '<text x="250" y="65" text-anchor="middle" fill="#94a3b8" font-size="13">Belum ada data</text>';
+    return;
+  }
+  const W = 500, H = 110, PAD = 20;
+  const maxV = Math.max(...data.map(d => d.value), 1);
+  const n = data.length;
+  const slotW = (W - PAD * 2) / n;
+  const barW  = Math.max(slotW * 0.55, 12);
+  svg.innerHTML = data.map((d, i) => {
+    const bh = Math.max((d.value / maxV) * (H - 24), d.value > 0 ? 3 : 0);
+    const x  = PAD + i * slotW + (slotW - barW) / 2;
+    const y  = H - 20 - bh;
+    const lbl = d.value > 0 ? `<text x="${x+barW/2}" y="${y-4}" text-anchor="middle" font-size="9" fill="#64748b">${d.value}</text>` : '';
+    return `${lbl}
+      <rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="#14b8a6" rx="3" opacity=".75"/>
+      <text x="${x+barW/2}" y="${H-2}" text-anchor="middle" font-size="10" fill="#94a3b8">${d.label}</text>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// USERS
+// ════════════════════════════════════════════════════════════════
+let _users = [];
+
+async function loadUsers() {
+  const d = await api('/admin/users');
+  if (!d) return;
+  _users = d.users || [];
+  renderUsers(_users);
+  fillUserSelect(_users);
+}
+
+function filterUsers() {
+  const q = document.getElementById('user-search').value.toLowerCase();
+  renderUsers(_users.filter(u =>
+    u.business_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+}
+
+function renderUsers(list) {
+  const tb = document.getElementById('users-tb');
+  if (!list.length) {
+    tb.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">👥</div><p>Belum ada user terdaftar</p></div></td></tr>`;
+    return;
+  }
+  tb.innerHTML = list.map(u => `
+    <tr>
+      <td><strong>${x(u.business_name)}</strong></td>
+      <td style="color:var(--muted)">${x(u.email)}</td>
+      <td>
+        <select class="sel-sm" onchange="setPkg('${x(u.key)}',this.value)">
+          ${['starter','growth','pro'].map(p=>`<option value="${p}"${p===u.package?' selected':''}>${p}</option>`).join('')}
+        </select>
+      </td>
+      <td><strong>${u.balance.toLocaleString('id-ID')}</strong></td>
+      <td style="font-size:11px; color:var(--muted);">${u.expires_at ? fDate(u.expires_at) : '—'}</td>
+      <td><span class="badge ${u.active?'b-ok':'b-err'}">${u.active?'● Aktif':'● Nonaktif'}</span></td>
+      <td>
+        <button onclick="toggleUser('${x(u.key)}',${!u.active})"
+                class="btn ${u.active?'btn-e':'btn-ok'}" style="padding:5px 10px; font-size:11px;">
+          ${u.active?'Nonaktifkan':'Aktifkan'}
+        </button>
+      </td>
+    </tr>`).join('');
+}
+
+async function setPkg(key, pkg) {
+  await api(`/admin/users/${encodeURIComponent(key)}`, {method:'PATCH', body: JSON.stringify({package: pkg})});
+  toast('Paket diperbarui ✓');
+}
+
+async function toggleUser(key, active) {
+  await api(`/admin/users/${encodeURIComponent(key)}`, {method:'PATCH', body: JSON.stringify({active})});
+  toast(active ? 'User diaktifkan ✓' : 'User dinonaktifkan');
+  loadUsers();
+}
+
+// ════════════════════════════════════════════════════════════════
+// ISSUE LICENSE MODAL
+// ════════════════════════════════════════════════════════════════
+function openModal() {
+  document.getElementById('iss-result').style.display = 'none';
+  document.getElementById('iss-btn').textContent = 'Terbitkan Lisensi';
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  loadUsers();
+}
+
+async function submitIssue(e) {
+  e.preventDefault();
+  const btn = document.getElementById('iss-btn');
+  btn.disabled = true; btn.textContent = 'Memproses…';
+  const d = await api('/admin/licenses/issue', {
+    method: 'POST',
+    body: JSON.stringify({
+      business_name: document.getElementById('iss-name').value,
+      email:         document.getElementById('iss-email').value,
+      package:       document.getElementById('iss-pkg').value,
+      months:        parseInt(document.getElementById('iss-months').value) || 1,
+    }),
+  });
+  btn.disabled = false; btn.textContent = 'Terbitkan Lisensi';
+  if (d?.license_key) {
+    document.getElementById('iss-key').textContent = d.license_key;
+    document.getElementById('iss-result').style.display = 'block';
+    toast('Lisensi diterbitkan ✓');
+  }
+}
+
+function copyKey() {
+  const k = document.getElementById('iss-key').textContent;
+  navigator.clipboard.writeText(k).then(() => toast('License key disalin ✓'));
+}
+
+// ════════════════════════════════════════════════════════════════
+// TOKEN MANAGEMENT
+// ════════════════════════════════════════════════════════════════
+function fillUserSelect(users) {
+  const sel = document.getElementById('tk-user');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Pilih User —</option>' +
+    users.map(u => `<option value="${x(u.key)}">${x(u.business_name)} — ${x(u.email)}</option>`).join('');
+  if (cur) sel.value = cur;
+}
+
+async function loadTokens() {
+  if (!_users.length) {
+    const d = await api('/admin/users');
+    if (d) { _users = d.users || []; fillUserSelect(_users); }
+  } else {
+    fillUserSelect(_users);
+  }
+  loadManualLog();
+}
+
+async function loadManualLog() {
+  const d = await api('/admin/transactions?limit=30');
+  if (!d) return;
+  const manual = (d.transactions || []).filter(t => (t.action || '').includes('manual') || t.action === 'bonus' || t.action === 'refund' || t.action === 'correction');
+  const el = document.getElementById('tk-log');
+  if (!manual.length) {
+    el.innerHTML = '<div class="empty"><div class="ei">📝</div><p>Belum ada penyesuaian manual</p></div>';
+    return;
+  }
+  el.innerHTML = manual.slice(0, 15).map(t => `
+    <div class="log-item">
+      <div>
+        <div class="log-name">${x(t.business_name || t.license_key?.slice(0,20)+'…' || '—')}</div>
+        <div class="log-meta">${x(t.reason || t.action)} · ${fDate(t.created_at)}</div>
+      </div>
+      <span class="${t.amount>0?'pos':'neg'}">${t.amount>0?'+':''}${t.amount.toLocaleString('id-ID')}</span>
+    </div>`).join('');
+}
+
+async function submitAdjust(e) {
+  e.preventDefault();
+  const key    = document.getElementById('tk-user').value;
+  const type   = document.getElementById('tk-type').value;
+  let   amount = parseInt(document.getElementById('tk-amount').value);
+  const reason = document.getElementById('tk-reason').value;
+
+  if (!key) { toast('Pilih user terlebih dahulu'); return; }
+  if (isNaN(amount) || amount === 0) { toast('Masukkan jumlah token yang valid'); return; }
+
+  // Auto-sign based on type
+  if (type === 'manual_deduct' && amount > 0) amount = -amount;
+  if (type !== 'manual_deduct' && amount < 0) amount = Math.abs(amount);
+
+  const btn = document.getElementById('tk-btn');
+  btn.disabled = true; btn.textContent = 'Memproses…';
+
+  const d = await api('/admin/token/adjust', {
+    method: 'POST',
+    body: JSON.stringify({ license_key: key, amount, reason: `[${type}] ${reason}` }),
+  });
+
+  btn.disabled = false; btn.textContent = 'Terapkan Perubahan';
+  if (d) {
+    toast(`✓ Token: ${d.old_balance.toLocaleString('id-ID')} → ${d.new_balance.toLocaleString('id-ID')}`);
+    document.getElementById('tk-amount').value = '';
+    document.getElementById('tk-reason').value = '';
+    loadManualLog();
+    // Refresh user balances silently
+    api('/admin/users').then(u => { if (u) { _users = u.users || []; fillUserSelect(_users); } });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// TRANSACTIONS
+// ════════════════════════════════════════════════════════════════
+async function loadTx() {
+  const filter = document.getElementById('tx-type').value;
+  const d = await api('/admin/transactions?limit=100');
+  if (!d) return;
+
+  let txs = d.transactions || [];
+  if (filter) txs = txs.filter(t => (t.action || '').includes(filter));
+
+  document.getElementById('tx-count').textContent = `${txs.length} transaksi`;
+  const tb = document.getElementById('tx-tb');
+
+  if (!txs.length) {
+    tb.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">💳</div><p>Belum ada transaksi</p></div></td></tr>`;
+    return;
+  }
+
+  tb.innerHTML = txs.map(t => {
+    const dbt = t.amount < 0;
+    return `<tr>
+      <td style="color:var(--muted); font-size:11px;">#${t.id}</td>
+      <td>
+        <strong>${x(t.business_name || '—')}</strong><br>
+        <span style="color:var(--muted); font-size:10px;">${x((t.license_key||'').slice(0,18))}…</span>
+      </td>
+      <td><span class="badge ${dbt?'b-warn':'b-info'}">${x(t.action)}</span></td>
+      <td class="${dbt?'neg':'pos'}">${t.amount>0?'+':''}${t.amount.toLocaleString('id-ID')}</td>
+      <td>${typeof t.balance_after==='number' ? t.balance_after.toLocaleString('id-ID') : '—'}</td>
+      <td style="font-size:11px; color:var(--muted);">${x(t.reason||t.reference_id||'—')}</td>
+      <td style="font-size:11px; color:var(--muted); white-space:nowrap;">${fDate(t.created_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// REVENUE
+// ════════════════════════════════════════════════════════════════
+async function loadRevenue() {
+  const d = await api('/admin/revenue');
+  if (!d) return;
+
+  document.getElementById('rv-total').textContent = 'Rp' + d.total_revenue.toLocaleString('id-ID');
+  const totalU = Object.values(d.breakdown).reduce((s,b) => s + b.count, 0);
+  document.getElementById('rv-users').textContent = totalU;
+  const avg = totalU > 0 ? Math.round(d.total_revenue / totalU) : 0;
+  document.getElementById('rv-avg').textContent = 'Rp' + avg.toLocaleString('id-ID');
+
+  const maxT = Math.max(...Object.values(d.breakdown).map(b => b.total), 1);
+  document.getElementById('rv-breakdown').innerHTML = Object.entries(d.breakdown).map(([pkg, b]) => `
+    <div style="margin-bottom:18px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+        <div>
+          <strong style="text-transform:capitalize;">${x(pkg)}</strong>
+          <span style="color:var(--muted); font-size:11px; margin-left:6px;">${b.count} user · Rp${b.price.toLocaleString('id-ID')}/bln</span>
+        </div>
+        <strong>Rp${b.total.toLocaleString('id-ID')}</strong>
+      </div>
+      <div class="rev-bar-bg">
+        <div class="rev-bar" style="width:${Math.round((b.total/maxT)*100)}%;"></div>
+      </div>
+    </div>`).join('');
+
+  const monthly = d.monthly || [];
+  document.getElementById('rv-monthly').innerHTML = monthly.length
+    ? `<table><thead><tr><th>Bulan</th><th>Revenue</th><th>Pelanggan Baru</th></tr></thead>
+       <tbody>${monthly.map(m=>`
+         <tr>
+           <td>${x(m.month)}</td>
+           <td><strong>Rp${m.revenue.toLocaleString('id-ID')}</strong></td>
+           <td>${m.new_users}</td>
+         </tr>`).join('')}
+       </tbody></table>`
+    : '<div class="empty"><div class="ei">📅</div><p>Belum ada data bulanan</p></div>';
+}
+
+// ════════════════════════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════════════════════════
+async function loadSettings() {
+  const [pkgs, users] = await Promise.all([api('/packages'), api('/admin/users')]);
+
+  if (pkgs?.packages) {
+    document.getElementById('pkg-tb').innerHTML = Object.entries(pkgs.packages).map(([n,p]) => `
+      <tr>
+        <td style="text-transform:capitalize; font-weight:700;">${x(n)}</td>
+        <td>${p.tokens === -1 ? '∞ Unlimited' : p.tokens.toLocaleString('id-ID')}</td>
+        <td>Rp${p.price.toLocaleString('id-ID')}</td>
+      </tr>`).join('');
+  }
+
+  document.getElementById('srv-info').innerHTML = `
+    <div><strong>Layanan</strong>: UMKM AI Suite — Cloud Server</div>
+    <div><strong>Port</strong>: 9000</div>
+    <div><strong>Waktu Server</strong>: ${new Date().toLocaleString('id-ID')}</div>
+    <div><strong>Total Lisensi</strong>: ${users?.total ?? '—'}</div>
+    <div><strong>Lisensi Aktif</strong>: ${users ? users.users.filter(u=>u.active).length : '—'}</div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════════════════
+function x(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('id-ID', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+}
+
+let _toastT;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
