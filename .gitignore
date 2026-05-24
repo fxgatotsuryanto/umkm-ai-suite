@@ -10,6 +10,7 @@ deploy/.env
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
 venv/
 .venv/
 *.egg-info/
@@ -23,8 +24,14 @@ build/
 
 # Node / Next.js
 node_modules/
+dashboard/node_modules/
 dashboard/.next/
 dashboard/out/
+dashboard/.env.local
+dashboard/.env*.local
+
+# Cloud server (standalone repo — do not commit here)
+cloud/
 
 # OS
 .DS_Store
