@@ -19,13 +19,13 @@ umkm-ai-suite/
 │   │   └── token_middleware.py ← Token system
 │   └── api/routes.py ← Semua endpoint API
 │
-├── cloud/            ← Deploy ke Railway/Render (server kamu)
-│   └── main.py       ← Token master, license, billing
-│
 ├── dashboard/        ← UI web untuk UMKM (Next.js)
 ├── n8n-workflows/    ← Import ke n8n kamu
 │   └── wa-autoreply.json
 └── .env.example      ← Template config
+
+> **Cloud server** (token, lisensi, billing, admin panel) ada di repo terpisah:
+> 👉 https://github.com/fxgatotsuryanto/umkm-ai-cloud — deploy ke Railway.
 ```
 
 ---
@@ -64,15 +64,17 @@ Buka: http://localhost:8000/docs
 
 ### 4. Setup Cloud Server
 
+Cloud server dikelola di repo terpisah. Deploy ke Railway:
+
 ```bash
-cd cloud
-pip install -r requirements.txt
+git clone https://github.com/fxgatotsuryanto/umkm-ai-cloud.git
+cd umkm-ai-cloud
+# Ikuti README di repo tersebut untuk deploy ke Railway
+```
 
-# Set environment variables:
-# CLOUD_DB_URL=postgresql+asyncpg://...
-# MASTER_API_KEY=kunci-rahasia-admin-kamu
-
-uvicorn cloud.main:app --port 9000
+Setelah deploy, salin URL Railway ke `.env` lokal:
+```env
+CLOUD_API_URL=https://umkm-ai-cloud.up.railway.app
 ```
 
 ### 5. Import n8n Workflow
