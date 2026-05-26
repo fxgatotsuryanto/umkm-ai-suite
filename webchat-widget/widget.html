@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UMKM AI Chat Widget</title>
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Widget Shell ── */
+    #umkm-chat-widget {
+      --primary: #16a34a;
+      --primary-dark: #15803d;
+      --primary-light: #f0fdf4;
+      --bubble-size: 60px;
+      --radius: 16px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.18);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #111827;
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 99999;
+    }
+
+    /* ── Toggle Button ── */
+    #umkm-chat-toggle {
+      width: var(--bubble-size);
+      height: var(--bubble-size);
+      border-radius: 50%;
+      background: var(--primary);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow);
+      transition: background 0.2s, transform 0.2s;
+      outline: none;
+    }
+    #umkm-chat-toggle:hover { background: var(--primary-dark); transform: scale(1.05); }
+    #umkm-chat-toggle svg { width: 28px; height: 28px; fill: #fff; transition: opacity 0.2s; }
+    #umkm-chat-toggle .icon-close { display: none; }
+
+    /* ── Chat Window ── */
+    #umkm-chat-window {
+      position: absolute;
+      bottom: calc(var(--bubble-size) + 12px);
+      right: 0;
+      width: 360px;
+      max-width: calc(100vw - 48px);
+      height: 520px;
+      max-height: calc(100vh - 120px);
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+      animation: slideUp 0.2s ease;
+    }
+    #umkm-chat-window.open { display: flex; }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Header ── */
+    #umkm-chat-header {
+      background: var(--primary);
+      color: #fff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #umkm-chat-header .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    #umkm-chat-header .info { flex: 1; }
+    #umkm-chat-header .name { font-weight: 600; font-size: 14px; }
+    #umkm-chat-header .status {
+      font-size: 11px;
+      opacity: 0.85;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    #umkm-chat-header .status::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #86efac;
+    }
+    #umkm-chat-close {
+      background: none;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      padding: 4px;
+      opacity: 0.8;
+      line-height: 1;
+    }
+    #umkm-chat-close:hover { opacity: 1; }
+
+    /* ── Messages ── */
+    #umkm-chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: #f9fafb;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      scroll-behavior: smooth;
+    }
+    #umkm-chat-messages::-webkit-scrollbar { width: 4px; }
+    #umkm-chat-messages::-webkit-scrollbar-track { background: transparent; }
+    #umkm-chat-messages::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+    .umkm-msg {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      max-width: 85%;
+    }
+    .umkm-msg.bot { align-self: flex-start; }
+    .umkm-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+    .umkm-bubble {
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 13.5px;
+      line-height: 1.55;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .umkm-msg.bot  .umkm-bubble { background: #fff; color: #111827; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .umkm-msg.user .umkm-bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+
+    /* ── Typing indicator ── */
+    .umkm-typing {
+      display: flex;
+      gap: 4px;
+      padding: 12px 14px;
+      background: #fff;
+      border-radius: 16px;
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      width: fit-content;
+    }
+    .umkm-typing span {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #9ca3af;
+      animation: bounce 1.2s infinite;
+    }
+    .umkm-typing span:nth-child(2) { animation-delay: 0.2s; }
+    .umkm-typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+
+    /* ── Input Area ── */
+    #umkm-chat-footer {
+      border-top: 1px solid #e5e7eb;
+      padding: 10px 12px;
+      display: flex;
+      gap: 8px;
+      background: #fff;
+      flex-shrink: 0;
+    }
+    #umkm-chat-input {
+      flex: 1;
+      border: 1px solid #e5e7eb;
+      border-radius: 24px;
+      padding: 9px 16px;
+      font-size: 13.5px;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+      line-height: 1.4;
+      max-height: 100px;
+      overflow-y: auto;
+      transition: border-color 0.15s;
+    }
+    #umkm-chat-input:focus { border-color: var(--primary); }
+    #umkm-chat-send {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      align-self: flex-end;
+      transition: background 0.15s;
+    }
+    #umkm-chat-send:hover { background: var(--primary-dark); }
+    #umkm-chat-send svg { width: 18px; height: 18px; fill: #fff; }
+    #umkm-chat-send:disabled { background: #9ca3af; cursor: not-allowed; }
+
+    /* ── Powered by ── */
+    #umkm-chat-powered {
+      text-align: center;
+      font-size: 10.5px;
+      color: #9ca3af;
+      padding: 4px 12px 6px;
+      background: #fff;
+    }
+    #umkm-chat-powered a { color: #16a34a; text-decoration: none; }
+
+    /* ── Mobile ── */
+    @media (max-width: 480px) {
+      #umkm-chat-widget { bottom: 16px; right: 16px; }
+      #umkm-chat-window { width: calc(100vw - 32px); max-width: 100%; right: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!--
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  UMKM AI Suite — Embeddable Web Chat Widget                     │
+  │                                                                 │
+  │  CARA EMBED DI WEBSITE CLIENT:                                  │
+  │  1. Copy semua kode antara <div id="umkm-chat-widget"> dan      │
+  │     penutupnya beserta <script> di bawah                        │
+  │  2. Paste sebelum </body> di halaman website client             │
+  │  3. Ganti BACKEND_URL dengan URL backend UMKM AI Suite          │
+  │                                                                 │
+  │  Atau gunakan iframe dari n8n chat trigger:                     │
+  │  <iframe src="https://n8n.anda.com/webhook/WEBHOOK_ID/chat"     │
+  │    style="width:100%;height:600px;border:none;"></iframe>        │
+  └─────────────────────────────────────────────────────────────────┘
+-->
+
+<div id="umkm-chat-widget">
+
+  <!-- Chat Window -->
+  <div id="umkm-chat-window" role="dialog" aria-label="Chat dengan AI">
+    <div id="umkm-chat-header">
+      <div class="avatar">🤖</div>
+      <div class="info">
+        <div class="name" id="umkm-agent-name">AI Assistant</div>
+        <div class="status">Online</div>
+      </div>
+      <button id="umkm-chat-close" aria-label="Tutup chat">✕</button>
+    </div>
+
+    <div id="umkm-chat-messages" role="log" aria-live="polite"></div>
+
+    <div id="umkm-chat-footer">
+      <textarea
+        id="umkm-chat-input"
+        placeholder="Ketik pesan..."
+        rows="1"
+        aria-label="Pesan"
+      ></textarea>
+      <button id="umkm-chat-send" aria-label="Kirim" disabled>
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div id="umkm-chat-powered">
+      Powered by <a href="#" target="_blank">UMKM AI Suite</a>
+    </div>
+  </div>
+
+  <!-- Toggle Button -->
+  <button id="umkm-chat-toggle" aria-label="Buka chat">
+    <svg class="icon-chat" viewBox="0 0 24 24">
+      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+    </svg>
+    <svg class="icon-close" viewBox="0 0 24 24">
+      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+    </svg>
+  </button>
+
+</div>
+
+<script>
+(function () {
+  // ── KONFIGURASI — GANTI SESUAI KEBUTUHAN ──────────────────────────
+  var BACKEND_URL  = "http://localhost:8000";          // URL backend UMKM AI Suite
+  var THEME_COLOR  = "#16a34a";                        // Warna utama (hex)
+  var AGENT_NAME   = "AI Assistant";                   // Nama agen yang tampil
+  var GREETING     = "Halo! Ada yang bisa saya bantu? 😊"; // Pesan sambutan
+  var AUTO_OPEN    = false;                            // Buka otomatis saat halaman load
+  // ──────────────────────────────────────────────────────────────────
+
+  var SESSION_KEY  = "umkm_chat_session";
+  var HISTORY_KEY  = "umkm_chat_history";
+
+  var widget   = document.getElementById("umkm-chat-widget");
+  var window_  = document.getElementById("umkm-chat-window");
+  var toggle   = document.getElementById("umkm-chat-toggle");
+  var close_   = document.getElementById("umkm-chat-close");
+  var messages = document.getElementById("umkm-chat-messages");
+  var input    = document.getElementById("umkm-chat-input");
+  var sendBtn  = document.getElementById("umkm-chat-send");
+  var agentEl  = document.getElementById("umkm-agent-name");
+
+  // Apply theme color
+  widget.style.setProperty("--primary", THEME_COLOR);
+  widget.style.setProperty("--primary-dark", shadeColor(THEME_COLOR, -10));
+  agentEl.textContent = AGENT_NAME;
+
+  // Session ID
+  var sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = "wc_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
+
+  var isOpen    = false;
+  var isLoading = false;
+
+  // Load config from backend
+  fetch(BACKEND_URL + "/api/webchat/widget-config")
+    .then(function (r) { return r.json(); })
+    .then(function (cfg) {
+      if (cfg.business_name) agentEl.textContent = cfg.business_name;
+      if (cfg.theme_color)   widget.style.setProperty("--primary", cfg.theme_color);
+    })
+    .catch(function () {});
+
+  // Restore history
+  var history = [];
+  try { history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch (e) {}
+  if (history.length) {
+    history.forEach(function (m) { appendMsg(m.role, m.content, false); });
+    scrollBottom();
+  }
+
+  // Toggle open/close
+  toggle.addEventListener("click", function () {
+    isOpen = !isOpen;
+    window_.classList.toggle("open", isOpen);
+    toggle.querySelector(".icon-chat").style.display  = isOpen ? "none" : "block";
+    toggle.querySelector(".icon-close").style.display = isOpen ? "block" : "none";
+    if (isOpen && !history.length) showGreeting();
+    if (isOpen) { scrollBottom(); input.focus(); }
+  });
+
+  close_.addEventListener("click", function () {
+    isOpen = false;
+    window_.classList.remove("open");
+    toggle.querySelector(".icon-chat").style.display  = "block";
+    toggle.querySelector(".icon-close").style.display = "none";
+  });
+
+  if (AUTO_OPEN) toggle.click();
+
+  // Input handling
+  input.addEventListener("input", function () {
+    sendBtn.disabled = !input.value.trim();
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 100) + "px";
+  });
+
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  sendBtn.addEventListener("click", sendMessage);
+
+  function showGreeting() {
+    appendMsg("bot", GREETING);
+    saveToHistory("bot", GREETING);
+  }
+
+  function sendMessage() {
+    var text = input.value.trim();
+    if (!text || isLoading) return;
+
+    appendMsg("user", text);
+    saveToHistory("user", text);
+    input.value = "";
+    input.style.height = "auto";
+    sendBtn.disabled = true;
+
+    var typingEl = showTyping();
+    isLoading = true;
+
+    fetch(BACKEND_URL + "/api/webchat/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, message: text })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        removeTyping(typingEl);
+        var reply = data.reply || "Maaf, terjadi kesalahan. Silakan coba lagi.";
+        appendMsg("bot", reply);
+        saveToHistory("bot", reply);
+      })
+      .catch(function () {
+        removeTyping(typingEl);
+        appendMsg("bot", "Maaf, tidak dapat terhubung ke server. Silakan coba lagi.");
+      })
+      .finally(function () { isLoading = false; });
+  }
+
+  function appendMsg(role, text, animate) {
+    var wrap = document.createElement("div");
+    wrap.className = "umkm-msg " + role;
+
+    var bubble = document.createElement("div");
+    bubble.className = "umkm-bubble";
+    bubble.textContent = text;
+
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    if (animate !== false) scrollBottom();
+  }
+
+  function showTyping() {
+    var wrap = document.createElement("div");
+    wrap.className = "umkm-msg bot";
+    wrap.innerHTML = '<div class="umkm-typing"><span></span><span></span><span></span></div>';
+    messages.appendChild(wrap);
+    scrollBottom();
+    return wrap;
+  }
+
+  function removeTyping(el) {
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function scrollBottom() {
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function saveToHistory(role, content) {
+    history.push({ role: role, content: content });
+    if (history.length > 40) history = history.slice(-40);
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch (e) {}
+  }
+
+  function shadeColor(hex, percent) {
+    var num = parseInt(hex.replace("#", ""), 16);
+    var r = Math.min(255, Math.max(0, (num >> 16) + percent * 2));
+    var g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + percent * 2));
+    var b = Math.min(255, Math.max(0, (num & 0xff) + percent * 2));
+    return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+  }
+})();
+</script>
+
+</body>
+</html>

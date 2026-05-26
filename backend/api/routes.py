@@ -14,6 +14,8 @@ from backend.db.models import (
     ContentLibrary,
     FAQ,
     Product,
+    WebChatSession,
+    WebChatMessage,
 )
 from backend.modules.content_ai import generate_content
 from backend.modules.token_middleware import (
@@ -23,6 +25,7 @@ from backend.modules.token_middleware import (
     mark_synced,
 )
 from backend.modules.wa_reply import generate_wa_reply
+from backend.modules.webchat import handle_webchat
 
 router = APIRouter()
 
@@ -324,3 +327,85 @@ async def update_profile(data: ProfileUpdate, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(profile)
     return {"message": "Profil berhasil diperbarui", "id": profile.id}
+
+
+# ── Web Chat ──────────────────────────────────────────────────────────────────
+
+class WebChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+
+@router.post("/webchat/message", tags=["WebChat"])
+async def webchat_message(req: WebChatRequest, db: AsyncSession = Depends(get_db)):
+    return await handle_webchat(db, req.session_id, req.message)
+
+
+@router.get("/webchat/history/{session_id}", tags=["WebChat"])
+async def webchat_history(
+    session_id: str,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(WebChatMessage)
+        .where(WebChatMessage.session_id == session_id)
+        .order_by(WebChatMessage.created_at)
+        .limit(limit)
+    )
+    msgs = res.scalars().all()
+    return [
+        {
+            "id": m.id,
+            "role": m.role,
+            "content": m.content,
+            "created_at": m.created_at.isoformat(),
+        }
+        for m in msgs
+    ]
+
+
+@router.get("/webchat/leads", tags=["WebChat"])
+async def webchat_leads(
+    limit: int = 50,
+    captured_only: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(WebChatSession)
+        .order_by(desc(WebChatSession.last_active))
+        .limit(limit)
+    )
+    if captured_only:
+        query = query.where(WebChatSession.lead_captured == True)  # noqa: E712
+    res = await db.execute(query)
+    sessions = res.scalars().all()
+    return [
+        {
+            "session_id": s.session_id,
+            "visitor_name": s.visitor_name,
+            "visitor_wa": s.visitor_wa,
+            "visitor_email": s.visitor_email,
+            "kebutuhan": s.kebutuhan,
+            "solusi": s.solusi,
+            "lead_captured": s.lead_captured,
+            "created_at": s.created_at.isoformat(),
+            "last_active": s.last_active.isoformat(),
+        }
+        for s in sessions
+    ]
+
+
+@router.get("/webchat/widget-config", tags=["WebChat"])
+async def webchat_widget_config(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(BusinessProfile).limit(1))
+    profile = res.scalar_one_or_none()
+    return {
+        "business_name": profile.name if profile else "AI Assistant",
+        "greeting": (
+            profile.wa_greeting
+            if profile
+            else "Halo! Ada yang bisa saya bantu? 😊"
+        ),
+        "theme_color": "#16a34a",
+    }
