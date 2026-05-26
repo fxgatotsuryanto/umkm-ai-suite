@@ -3,30 +3,33 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap, Globe } from 'lucide-react';
 import { api, type Balance } from '@/lib/api';
 
 const navItems = [
   { href: '/',           label: 'Dashboard',           icon: LayoutDashboard },
   { href: '/wa',         label: 'WhatsApp Auto-Reply',  icon: MessageSquare  },
+  { href: '/webchat',    label: 'Web Chat',             icon: Globe          },
   { href: '/konten',     label: 'Content Marketing',    icon: PenSquare      },
-  { href: '/pengaturan', label: 'Settings',             icon: Settings       },
+  { href: '/pengaturan', label: 'Pengaturan',           icon: Settings       },
 ];
 
 const PACKAGE_MAX: Record<string, number> = { starter: 500, growth: 5000, pro: 99999 };
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [balance, setBalance] = useState<Balance | null>(null);
+  const [balance, setBalance]     = useState<Balance | null>(null);
   const [storeName, setStoreName] = useState('Toko Saya');
 
   useEffect(() => {
     api.getBalance().then(setBalance).catch(() => {});
-    api.getProfile().then(d => { if ('name' in d && d.name) setStoreName(d.name); }).catch(() => {});
+    api.getProfile()
+      .then(d => { if ('name' in d && d.name) setStoreName(d.name); })
+      .catch(() => {});
   }, []);
 
-  const max = PACKAGE_MAX[balance?.package ?? 'starter'] ?? 500;
-  const pct = balance ? Math.min(100, (balance.balance / max) * 100) : 0;
+  const max       = PACKAGE_MAX[balance?.package ?? 'starter'] ?? 500;
+  const pct       = balance ? Math.min(100, (balance.balance / max) * 100) : 0;
   const remaining = balance ? Math.max(0, max - balance.balance) : 0;
 
   return (
@@ -42,7 +45,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-3 pt-2 space-y-0.5">
         {navItems.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
             <Link
               key={href}
@@ -82,7 +85,7 @@ export default function Sidebar() {
             />
           </div>
           <p className="text-xs text-teal-400 mb-3">
-            Tersisa: {remaining.toLocaleString('id-ID')} Token
+            Terpakai: {remaining.toLocaleString('id-ID')} Token
           </p>
           <Link
             href="/pengaturan"

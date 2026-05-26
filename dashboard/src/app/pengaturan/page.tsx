@@ -2,13 +2,14 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Plus, Package, HelpCircle, Store, Check, Trash2 } from 'lucide-react';
-import { api, type Product, type FAQ, type Profile } from '@/lib/api';
+import { Plus, Package, HelpCircle, Store, Check, Trash2, Globe } from 'lucide-react';
+import { api, type Product, type FAQ, type Profile, type WebChatConfig } from '@/lib/api';
 
 const TABS = [
-  { id: 'produk', label: 'Produk',        icon: Package   },
-  { id: 'faq',    label: 'FAQ',           icon: HelpCircle },
-  { id: 'profil', label: 'Profil Bisnis', icon: Store     },
+  { id: 'produk',   label: 'Produk',        icon: Package    },
+  { id: 'faq',      label: 'FAQ',           icon: HelpCircle },
+  { id: 'profil',   label: 'Profil Bisnis', icon: Store      },
+  { id: 'webchat',  label: 'Widget Chat',   icon: Globe      },
 ];
 
 function SaveButton({ saving, saved, disabled, onClick, label = 'Simpan' }: {
@@ -46,10 +47,16 @@ function PengaturanContent() {
   const [savingProf, setSavingProf]   = useState(false);
   const [savedProf, setSavedProf]     = useState(false);
 
+  // ── WebChat Config ──
+  const [wcfg, setWcfg]               = useState<Partial<WebChatConfig>>({});
+  const [savingWC, setSavingWC]       = useState(false);
+  const [savedWC, setSavedWC]         = useState(false);
+
   useEffect(() => {
     api.getProducts().then(setProducts).catch(() => {});
     api.getFAQs().then(setFaqs).catch(() => {});
     api.getProfile().then(d => { if ('name' in d) setProfile(d as Profile); }).catch(() => {});
+    api.getWebChatConfig().then(c => setWcfg(c)).catch(() => {});
   }, []);
 
   const addProduct = async () => {
@@ -90,11 +97,19 @@ function PengaturanContent() {
     } catch {} finally { setSavingProf(false); }
   };
 
+  const saveWebChatConfig = async () => {
+    setSavingWC(true);
+    try {
+      await api.updateWebChatConfig(wcfg);
+      setSavedWC(true); setTimeout(() => setSavedWC(false), 2500);
+    } catch {} finally { setSavingWC(false); }
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-800">Pengaturan</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Kelola produk, FAQ, dan profil bisnis kamu</p>
+        <p className="text-sm text-slate-500 mt-0.5">Kelola produk, FAQ, profil, dan widget chat</p>
       </div>
 
       {/* Tabs */}
@@ -312,6 +327,94 @@ function PengaturanContent() {
                     : 'Simpan Profil'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: WIDGET CHAT ──────────────────────────────── */}
+      {tab === 'webchat' && (
+        <div className="max-w-2xl">
+          <div className="card p-6 space-y-5">
+            <div>
+              <h2 className="font-semibold text-slate-800 mb-1">Konfigurasi Widget Chat</h2>
+              <p className="text-xs text-slate-500">
+                Pengaturan tampilan dan perilaku chat bubble di website klien.
+                Detail embed code tersedia di halaman{' '}
+                <a href="/webchat?tab=config" className="text-teal-600 underline">Web Chat → Konfigurasi Widget</a>.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Nama Agen</label>
+                <input
+                  className="input"
+                  value={wcfg.agent_name ?? ''}
+                  onChange={e => setWcfg(c => ({ ...c, agent_name: e.target.value }))}
+                  placeholder="AI Assistant"
+                />
+              </div>
+              <div>
+                <label className="label">Warna Tema</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={wcfg.theme_color ?? '#16a34a'}
+                    onChange={e => setWcfg(c => ({ ...c, theme_color: e.target.value }))}
+                    className="w-10 h-10 rounded-lg border border-slate-200 cursor-pointer p-0.5"
+                  />
+                  <input
+                    className="input flex-1"
+                    value={wcfg.theme_color ?? ''}
+                    onChange={e => setWcfg(c => ({ ...c, theme_color: e.target.value }))}
+                    placeholder="#16a34a"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Pesan Sambutan Widget</label>
+              <textarea
+                className="input resize-none"
+                rows={2}
+                value={wcfg.greeting ?? ''}
+                onChange={e => setWcfg(c => ({ ...c, greeting: e.target.value }))}
+                placeholder="Halo! Ada yang bisa saya bantu? 😊"
+              />
+            </div>
+
+            <div>
+              <label className="label">No. WA untuk CTA (opsional)</label>
+              <input
+                className="input"
+                value={wcfg.cta_wa_number ?? ''}
+                onChange={e => setWcfg(c => ({ ...c, cta_wa_number: e.target.value }))}
+                placeholder="6281234567890"
+              />
+            </div>
+
+            <div>
+              <label className="label">Telegram Chat ID (notifikasi lead)</label>
+              <input
+                className="input"
+                value={wcfg.telegram_chat_id ?? ''}
+                onChange={e => setWcfg(c => ({ ...c, telegram_chat_id: e.target.value }))}
+                placeholder="249940246"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button onClick={saveWebChatConfig} disabled={savingWC} className="btn-primary flex items-center gap-2">
+                {savedWC
+                  ? <><Check size={15} className="text-green-300" /> Tersimpan!</>
+                  : savingWC ? 'Menyimpan...'
+                  : 'Simpan Konfigurasi'}
+              </button>
+              <a href="/webchat?tab=config" className="btn-secondary text-sm">
+                Lihat Embed Code →
+              </a>
             </div>
           </div>
         </div>
