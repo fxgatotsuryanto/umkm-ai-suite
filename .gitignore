@@ -29,6 +29,7 @@ dashboard/.next/
 dashboard/out/
 dashboard/.env.local
 dashboard/.env*.local
+dashboard/tsconfig.tsbuildinfo
 
 # Cloud server (standalone repo — do not commit here)
 cloud/
