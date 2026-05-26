@@ -1,0 +1,317 @@
+{
+  "name": "UMKM AI — Smart Chatbot (Wablas)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatbot-incoming",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WA Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "chatbot-incoming"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ================================================================\n// ⚙️  KONFIGURASI — Hanya edit node ini, sisanya otomatis\n// ================================================================\n\nconst BACKEND_URL            = 'https://your-backend.com';   // ← URL backend UMKM AI Suite\nconst CHATBOT_CONFIG_ID      = 1;                            // ← ID chatbot dari dashboard\nconst CHATBOT_WEBHOOK_SECRET = '';                           // ← Kosongkan jika tidak pakai\n\n// Wablas config\nconst WABLAS_URL             = 'https://bdg.wablas.com/api/send-message'; // ← Ganti domain sesuai server Wablas kamu\nconst WABLAS_TOKEN           = 'ISI_TOKEN_WABLAS_KAMU_DISINI';            // ← Token dari Wablas dashboard\n\nconst FALLBACK_MSG           = 'Maaf, asisten kami sedang sibuk 🙏 Silakan coba lagi dalam beberapa saat atau hubungi admin kami.';\n\n// ================================================================\n// Jangan edit di bawah ini\n// ================================================================\nreturn [{\n  json: {\n    BACKEND_URL,\n    CHATBOT_CONFIG_ID,\n    CHATBOT_WEBHOOK_SECRET,\n    WABLAS_URL,\n    WABLAS_TOKEN,\n    FALLBACK_MSG\n  }\n}];"
+      },
+      "id": "config-setup",
+      "name": "⚙️ Config Setup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize payload dari Wablas\n// Payload Wablas: body.phone, body.message, body.pushName, body.isGroup, dll.\nconst body = $('WA Webhook Trigger').first().json.body ||\n             $('WA Webhook Trigger').first().json;\n\nconst waNumber  = body.phone   || body.sender || '';\nconst message   = body.message || body.text   || '';\nconst name      = body.pushName || body.name  || '';\nconst isGroup   = body.isGroup  === true;\nconst isMedia   = body.isImage  === true || body.isVideo    === true ||\n                  body.isAudio  === true || body.isDocument === true;\nconst fromSelf  = body.fromMe   === true;\n\nreturn [{\n  json: {\n    wa_number: waNumber,\n    message:   message,\n    name:      name,\n    is_group:  isGroup,\n    is_media:  isMedia,\n    from_self: fromSelf\n  }\n}];"
+      },
+      "id": "normalize-payload",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "id": "has-message",
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            },
+            {
+              "id": "has-number",
+              "leftValue": "={{ $json.wa_number }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            },
+            {
+              "id": "not-from-self",
+              "leftValue": "={{ $json.from_self }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            },
+            {
+              "id": "not-group",
+              "leftValue": "={{ $json.is_group }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            },
+            {
+              "id": "not-media",
+              "leftValue": "={{ $json.is_media }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "filter-valid",
+      "name": "Valid Text Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build payload chatbot\n// session_id: unik per user per chatbot (AI ingat konteks)\nconst cfg       = $('⚙️ Config Setup').first().json;\nconst waNumber  = $json.wa_number;\nconst configId  = cfg.CHATBOT_CONFIG_ID || 1;\nconst sessionId = `${configId}_${waNumber}`;\n\nreturn [{\n  json: {\n    config_id:       configId,\n    session_id:      sessionId,\n    message:         $json.message,\n    user_identifier: waNumber,\n    user_name:       $json.name || '',\n    webhook_secret:  cfg.CHATBOT_WEBHOOK_SECRET || '',\n    _wa_number:      waNumber\n  }\n}];"
+      },
+      "id": "build-payload",
+      "name": "Build Chatbot Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ Config Setup').first().json.BACKEND_URL }}/api/chatbot/chat",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"config_id\":        {{ $json.config_id }},\n  \"session_id\":       \"{{ $json.session_id }}\",\n  \"message\":          {{ JSON.stringify($json.message) }},\n  \"user_identifier\":  \"{{ $json.user_identifier }}\",\n  \"user_name\":        \"{{ $json.user_name }}\",\n  \"webhook_secret\":   \"{{ $json.webhook_secret }}\"\n}",
+        "options": {
+          "timeout": 30000,
+          "response": { "response": { "neverError": true } }
+        }
+      },
+      "id": "call-chatbot-api",
+      "name": "Call Chatbot API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "id": "ai-success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-success",
+      "name": "AI Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1520, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "reply-phone",
+              "name": "phone",
+              "value": "={{ $('Build Chatbot Payload').first().json._wa_number }}",
+              "type": "string"
+            },
+            {
+              "id": "reply-message",
+              "name": "message",
+              "value": "={{ $json.reply }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-reply",
+      "name": "Set Reply Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1740, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ Config Setup').first().json.WABLAS_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('⚙️ Config Setup').first().json.WABLAS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": { "response": { "neverError": true } }
+        }
+      },
+      "id": "send-via-wablas",
+      "name": "Send via Wablas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 120]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fallback-phone",
+              "name": "phone",
+              "value": "={{ $('Build Chatbot Payload').first().json._wa_number }}",
+              "type": "string"
+            },
+            {
+              "id": "fallback-message",
+              "name": "message",
+              "value": "={{ $('⚙️ Config Setup').first().json.FALLBACK_MSG }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-fallback",
+      "name": "Set Fallback Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1740, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ Config Setup').first().json.WABLAS_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('⚙️ Config Setup').first().json.WABLAS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": { "response": { "neverError": true } }
+        }
+      },
+      "id": "send-fallback-wablas",
+      "name": "Send Fallback via Wablas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 300]
+    }
+  ],
+  "connections": {
+    "WA Webhook Trigger": {
+      "main": [[{ "node": "⚙️ Config Setup", "type": "main", "index": 0 }]]
+    },
+    "⚙️ Config Setup": {
+      "main": [[{ "node": "Normalize Payload", "type": "main", "index": 0 }]]
+    },
+    "Normalize Payload": {
+      "main": [[{ "node": "Valid Text Message?", "type": "main", "index": 0 }]]
+    },
+    "Valid Text Message?": {
+      "main": [
+        [{ "node": "Build Chatbot Payload", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Build Chatbot Payload": {
+      "main": [[{ "node": "Call Chatbot API", "type": "main", "index": 0 }]]
+    },
+    "Call Chatbot API": {
+      "main": [[{ "node": "AI Success?", "type": "main", "index": 0 }]]
+    },
+    "AI Success?": {
+      "main": [
+        [{ "node": "Set Reply Fields", "type": "main", "index": 0 }],
+        [{ "node": "Set Fallback Fields", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set Reply Fields": {
+      "main": [[{ "node": "Send via Wablas", "type": "main", "index": 0 }]]
+    },
+    "Set Fallback Fields": {
+      "main": [[{ "node": "Send Fallback via Wablas", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "umkm-ai-suite" },
+    { "name": "chatbot" },
+    { "name": "wablas" }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "umkm-ai-suite"
+  }
+}
