@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap, Bot } from 'lucide-react';
 import { api, type Balance } from '@/lib/api';
 
 const navItems = [
   { href: '/',           label: 'Dashboard',           icon: LayoutDashboard },
   { href: '/wa',         label: 'WhatsApp Auto-Reply',  icon: MessageSquare  },
+  { href: '/chatbot',    label: 'AI Chatbot',           icon: Bot            },
   { href: '/konten',     label: 'Content Marketing',    icon: PenSquare      },
   { href: '/pengaturan', label: 'Settings',             icon: Settings       },
 ];

@@ -77,6 +77,41 @@ async def get_unsynced_transactions(db: AsyncSession) -> list:
     return result.scalars().all()
 
 
+async def deduct_token_amount(db: AsyncSession, amount: int, action: str, reference_id: str = "") -> bool:
+    """Deduct a specific token amount (used by chatbot with configurable cost)."""
+    token = await _get_or_create_balance(db)
+    if token.balance < amount:
+        return False
+    token.balance -= amount
+    ledger = TokenLedger(
+        action=action,
+        amount=-amount,
+        balance_after=token.balance,
+        reference_id=reference_id,
+        synced=False,
+    )
+    db.add(ledger)
+    await db.commit()
+    return True
+
+
+async def refund_token_amount(db: AsyncSession, amount: int, action: str, reference_id: str = "") -> int:
+    """Refund a specific token amount."""
+    token = await _get_or_create_balance(db)
+    token.balance += amount
+    ledger = TokenLedger(
+        action=f"{action}_refund",
+        amount=amount,
+        balance_after=token.balance,
+        reference_id=reference_id,
+        synced=True,
+    )
+    db.add(ledger)
+    await db.commit()
+    await db.refresh(token)
+    return token.balance
+
+
 async def refund_token(db: AsyncSession, action: str, reference_id: str = "") -> int:
     cost = TOKEN_COSTS.get(action, 1)
     token = await _get_or_create_balance(db)

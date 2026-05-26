@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from backend.config import settings
 from backend.db.database import init_db
 from backend.api.routes import router
+from backend.api.chatbot_routes import router as chatbot_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(chatbot_router, prefix="/api")
 
 
 @app.exception_handler(Exception)
