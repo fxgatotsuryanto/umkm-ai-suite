@@ -1,9 +1,13 @@
+import csv
+import io
+from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
@@ -14,8 +18,10 @@ from backend.db.models import (
     ContentLibrary,
     FAQ,
     Product,
-    WebChatSession,
+    TokenLedger,
+    WebChatConfig,
     WebChatMessage,
+    WebChatSession,
 )
 from backend.modules.content_ai import generate_content
 from backend.modules.token_middleware import (
@@ -398,14 +404,181 @@ async def webchat_leads(
 
 @router.get("/webchat/widget-config", tags=["WebChat"])
 async def webchat_widget_config(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(BusinessProfile).limit(1))
-    profile = res.scalar_one_or_none()
+    cfg_res = await db.execute(select(WebChatConfig).limit(1))
+    cfg = cfg_res.scalar_one_or_none()
+    profile_res = await db.execute(select(BusinessProfile).limit(1))
+    profile = profile_res.scalar_one_or_none()
     return {
-        "business_name": profile.name if profile else "AI Assistant",
-        "greeting": (
-            profile.wa_greeting
-            if profile
-            else "Halo! Ada yang bisa saya bantu? 😊"
+        "business_name": (
+            profile.name if profile and profile.name else (cfg.agent_name if cfg else "AI Assistant")
         ),
-        "theme_color": "#16a34a",
+        "agent_name":   cfg.agent_name   if cfg else "AI Assistant",
+        "greeting":     cfg.greeting     if cfg else "Halo! Ada yang bisa saya bantu? 😊",
+        "theme_color":  cfg.theme_color  if cfg else "#16a34a",
+        "auto_open":    cfg.auto_open    if cfg else False,
+        "cta_wa_number": cfg.cta_wa_number if cfg else "",
+    }
+
+
+# ── WebChat Config (CRUD) ─────────────────────────────────────────────────────
+
+class WebChatConfigUpdate(BaseModel):
+    agent_name: Optional[str] = None
+    greeting: Optional[str] = None
+    theme_color: Optional[str] = None
+    system_prompt_extra: Optional[str] = None
+    cta_wa_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    webhook_url: Optional[str] = None
+    auto_open: Optional[bool] = None
+
+
+@router.get("/webchat/config", tags=["WebChat"])
+async def get_webchat_config(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(WebChatConfig).limit(1))
+    cfg = res.scalar_one_or_none()
+    if not cfg:
+        cfg = WebChatConfig()
+        db.add(cfg)
+        await db.commit()
+        await db.refresh(cfg)
+    return {
+        "agent_name":           cfg.agent_name,
+        "greeting":             cfg.greeting,
+        "theme_color":          cfg.theme_color,
+        "system_prompt_extra":  cfg.system_prompt_extra,
+        "cta_wa_number":        cfg.cta_wa_number,
+        "telegram_chat_id":     cfg.telegram_chat_id,
+        "webhook_url":          cfg.webhook_url,
+        "auto_open":            cfg.auto_open,
+        "updated_at":           cfg.updated_at.isoformat(),
+    }
+
+
+@router.put("/webchat/config", tags=["WebChat"])
+async def update_webchat_config(
+    data: WebChatConfigUpdate, db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(WebChatConfig).limit(1))
+    cfg = res.scalar_one_or_none()
+    if not cfg:
+        cfg = WebChatConfig()
+        db.add(cfg)
+
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(cfg, field, value)
+
+    await db.commit()
+    await db.refresh(cfg)
+    return {"message": "Konfigurasi webchat berhasil diperbarui"}
+
+
+# ── WebChat Leads Export ──────────────────────────────────────────────────────
+
+@router.get("/webchat/leads/export", tags=["WebChat"])
+async def export_webchat_leads(
+    captured_only: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(WebChatSession).order_by(desc(WebChatSession.last_active))
+    if captured_only:
+        query = query.where(WebChatSession.lead_captured == True)  # noqa: E712
+    res = await db.execute(query)
+    sessions = res.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Nama", "WA", "Email", "Kebutuhan", "Solusi", "Tanggal", "Session ID"])
+    for s in sessions:
+        writer.writerow([
+            s.visitor_name,
+            s.visitor_wa,
+            s.visitor_email,
+            s.kebutuhan,
+            s.solusi,
+            s.created_at.strftime("%Y-%m-%d %H:%M"),
+            s.session_id,
+        ])
+
+    output.seek(0)
+    filename = f"leads_webchat_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+
+@router.get("/stats", tags=["Stats"])
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start  = today_start - timedelta(days=today_start.weekday())
+
+    # WA chats
+    wa_today_res  = await db.execute(
+        select(func.count(ChatHistory.id)).where(ChatHistory.created_at >= today_start)
+    )
+    wa_total_res  = await db.execute(select(func.count(ChatHistory.id)))
+
+    # WebChat sessions
+    wc_today_res  = await db.execute(
+        select(func.count(WebChatSession.id)).where(WebChatSession.created_at >= today_start)
+    )
+    wc_total_res  = await db.execute(select(func.count(WebChatSession.id)))
+
+    # WebChat leads
+    leads_today_res = await db.execute(
+        select(func.count(WebChatSession.id)).where(
+            WebChatSession.lead_captured == True,  # noqa: E712
+            WebChatSession.created_at >= today_start,
+        )
+    )
+    leads_total_res = await db.execute(
+        select(func.count(WebChatSession.id)).where(
+            WebChatSession.lead_captured == True  # noqa: E712
+        )
+    )
+
+    # Content
+    content_today_res = await db.execute(
+        select(func.count(ContentLibrary.id)).where(ContentLibrary.created_at >= today_start)
+    )
+    content_total_res = await db.execute(select(func.count(ContentLibrary.id)))
+
+    # Tokens used today (debit entries from ledger)
+    tokens_today_res = await db.execute(
+        select(func.sum(TokenLedger.amount)).where(
+            TokenLedger.amount < 0,
+            TokenLedger.created_at >= today_start,
+        )
+    )
+    tokens_week_res = await db.execute(
+        select(func.sum(TokenLedger.amount)).where(
+            TokenLedger.amount < 0,
+            TokenLedger.created_at >= week_start,
+        )
+    )
+
+    tokens_today = abs(tokens_today_res.scalar() or 0)
+    tokens_week  = abs(tokens_week_res.scalar()  or 0)
+
+    return {
+        "today": {
+            "wa_chats":         wa_today_res.scalar() or 0,
+            "webchat_sessions": wc_today_res.scalar() or 0,
+            "webchat_leads":    leads_today_res.scalar() or 0,
+            "content_generated": content_today_res.scalar() or 0,
+            "tokens_used":      tokens_today,
+        },
+        "week": {
+            "tokens_used": tokens_week,
+        },
+        "total": {
+            "wa_chats":         wa_total_res.scalar() or 0,
+            "webchat_sessions": wc_total_res.scalar() or 0,
+            "webchat_leads":    leads_total_res.scalar() or 0,
+            "content_generated": content_total_res.scalar() or 0,
+        },
     }

@@ -96,6 +96,25 @@ class TokenLedger(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class WebChatConfig(Base):
+    __tablename__ = "webchat_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_name: Mapped[str] = mapped_column(String(100), default="AI Assistant")
+    greeting: Mapped[str] = mapped_column(
+        Text, default="Halo! Ada yang bisa saya bantu? 😊"
+    )
+    theme_color: Mapped[str] = mapped_column(String(20), default="#16a34a")
+    system_prompt_extra: Mapped[str] = mapped_column(Text, default="")
+    cta_wa_number: Mapped[str] = mapped_column(String(20), default="")
+    telegram_chat_id: Mapped[str] = mapped_column(String(50), default="")
+    webhook_url: Mapped[str] = mapped_column(String(500), default="")
+    auto_open: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class WebChatSession(Base):
     __tablename__ = "webchat_sessions"
 

@@ -8,6 +8,7 @@ from backend.db.models import TokenBalance, TokenLedger
 TOKEN_COSTS = {
     "wa_reply": 2,
     "content_generate": 5,
+    "webchat": 2,
 }
 
 
