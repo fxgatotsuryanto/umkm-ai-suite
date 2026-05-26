@@ -1,6 +1,6 @@
 # UMKM AI Suite 🚀
 
-Aplikasi AI untuk UMKM — WA Auto-Reply & Konten Marketing otomatis.  
+Aplikasi AI untuk UMKM — WA Auto-Reply, Web Chat, & Konten Marketing otomatis.  
 Arsitektur hybrid: data privat tersimpan lokal, token & billing di cloud.
 
 ---
@@ -9,153 +9,235 @@ Arsitektur hybrid: data privat tersimpan lokal, token & billing di cloud.
 
 ```
 umkm-ai-suite/
-├── backend/          ← Jalan di komputer/server UMKM
-│   ├── main.py       ← Entry point FastAPI
-│   ├── config.py     ← Settings dari .env
-│   ├── db/models.py  ← Database lokal (SQLite)
+├── backend/                   ← FastAPI (jalan di server/VPS)
+│   ├── main.py
+│   ├── config.py
+│   ├── db/models.py           ← SQLite lokal
 │   ├── modules/
-│   │   ├── wa_reply.py        ← Modul 1: WA Auto-Reply
-│   │   ├── content_ai.py      ← Modul 4: Konten Marketing
-│   │   └── token_middleware.py ← Token system
-│   └── api/routes.py ← Semua endpoint API
+│   │   ├── wa_reply.py        ← WA Auto-Reply AI
+│   │   ├── content_ai.py      ← Konten Marketing AI
+│   │   ├── webchat.py         ← Web Chat AI
+│   │   └── notifications.py  ← Telegram / Webhook notif
+│   └── api/routes.py
 │
-├── dashboard/        ← UI web untuk UMKM (Next.js)
-├── n8n-workflows/    ← Import ke n8n kamu
-│   └── wa-autoreply.json
-└── .env.example      ← Template config
-
-> **Cloud server** (token, lisensi, billing, admin panel) ada di repo terpisah:
-> 👉 https://github.com/fxgatotsuryanto/umkm-ai-cloud — deploy ke Railway.
+├── dashboard/                 ← UI panel (Next.js 14)
+├── webchat-widget/
+│   └── widget.html            ← Widget embed untuk website client
+├── n8n-workflows/
+│   ├── wa-autoreply.json      ← Import ke n8n
+│   └── webchat.json           ← Web Chat workflow n8n
+└── deploy/
+    ├── setup.sh               ← One-command VPS setup
+    ├── nginx.conf             ← Nginx reverse proxy
+    ├── backend.service        ← Systemd: backend FastAPI
+    └── dashboard.service      ← Systemd: dashboard Next.js
 ```
 
 ---
 
-## Quick Start
+## Cara Akses Dashboard
 
-### 1. Clone & Setup
+Ada **dua cara** menjalankan dashboard:
 
+### Opsi A — Lokal (Development / Testing)
+
+Jalankan dua terminal:
+
+**Terminal 1 — Backend:**
 ```bash
-git clone https://github.com/kamu/umkm-ai-suite.git
 cd umkm-ai-suite
-
-cp .env.example .env
-# Edit .env — isi OPENAI_API_KEY, dll
-```
-
-### 2. Install Dependencies
-
-```bash
-cd backend
+cp .env.example .env          # isi OPENAI_API_KEY dll
 python -m venv venv
-source venv/bin/activate        # Mac/Linux
-# atau: venv\Scripts\activate   # Windows
-
-pip install -r requirements.txt
-```
-
-### 3. Jalankan Backend Lokal
-
-```bash
-# Dari root folder
+source venv/bin/activate      # Windows: venv\Scripts\activate
+pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Buka: http://localhost:8000/docs
-
-### 4. Setup Cloud Server
-
-Cloud server dikelola di repo terpisah. Deploy ke Railway:
-
+**Terminal 2 — Dashboard:**
 ```bash
-git clone https://github.com/fxgatotsuryanto/umkm-ai-cloud.git
-cd umkm-ai-cloud
-# Ikuti README di repo tersebut untuk deploy ke Railway
-```
-
-Setelah deploy, salin URL Railway ke `.env` lokal:
-```env
-CLOUD_API_URL=https://umkm-ai-cloud.up.railway.app
-```
-
-### 5. Import n8n Workflow
-
-1. Buka n8n kamu
-2. Import `n8n-workflows/wa-autoreply.json`
-3. Set environment variable `N8N_WEBHOOK_SECRET` dan `BACKEND_URL`
-4. Aktifkan workflow & arahkan webhook WA ke URL n8n
-
-### 6. Dashboard UI
-
-```bash
-cd dashboard
+cd umkm-ai-suite/dashboard
 npm install
 npm run dev
 ```
 
-Buka: http://localhost:3000
+**Buka browser:** `http://localhost:3000`
+
+> API backend otomatis terhubung ke `http://localhost:8000` (default).
 
 ---
 
-## API Endpoints (Backend Lokal)
+### Opsi B — VPS / Server Produksi (Recommended)
+
+Arsitektur produksi: **satu domain**, nginx sebagai reverse proxy:
+
+```
+https://panel.aimarketingstrategic.com
+        │
+        ├── /api/*  → FastAPI (port 8000)
+        └── /*      → Next.js Dashboard (port 3000)
+```
+
+#### Setup otomatis (Ubuntu 22.04):
+
+```bash
+# Di VPS sebagai root:
+bash <(curl -fsSL https://raw.githubusercontent.com/fxgatotsuryanto/umkm-ai-suite/main/deploy/setup.sh)
+```
+
+Script akan:
+1. Install Node.js 20, Python 3, Nginx, Certbot
+2. Clone repo ke `/opt/umkm-ai-suite`
+3. Build Next.js dengan `NEXT_PUBLIC_BACKEND_URL` yang benar
+4. Install 3 systemd services (backend + dashboard + cloud)
+5. Konfigurasi Nginx + SSL otomatis via Certbot
+
+#### Setup manual (jika perlu):
+
+```bash
+# 1. Clone
+git clone https://github.com/fxgatotsuryanto/umkm-ai-suite.git /opt/umkm-ai-suite
+cd /opt/umkm-ai-suite
+
+# 2. Buat .env
+cp .env.example .env
+nano .env   # isi semua variabel
+
+# 3. Python
+python3 -m venv venv
+venv/bin/pip install -r backend/requirements.txt
+
+# 4. Build Next.js (penting: set URL backend dulu)
+cd dashboard
+NEXT_PUBLIC_BACKEND_URL=https://panel.aimarketingstrategic.com npm run build
+cp -r .next/static .next/standalone/.next/static
+cd ..
+
+# 5. Systemd services
+cp deploy/backend.service  /etc/systemd/system/umkm-backend.service
+# Edit dashboard.service: ganti NEXT_PUBLIC_BACKEND_URL dengan domain kamu
+cp deploy/dashboard.service /etc/systemd/system/umkm-dashboard.service
+
+systemctl daemon-reload
+systemctl enable  --now umkm-backend umkm-dashboard
+
+# 6. Nginx
+cp deploy/nginx.conf /etc/nginx/sites-available/panel.aimarketingstrategic.com
+ln -s /etc/nginx/sites-available/panel.aimarketingstrategic.com \
+      /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+
+# 7. SSL
+certbot --nginx -d panel.aimarketingstrategic.com
+```
+
+**Buka browser:** `https://panel.aimarketingstrategic.com`
+
+---
+
+## Variabel Environment Wajib (.env)
+
+```env
+# OpenRouter (https://openrouter.ai)
+OPENAI_API_KEY=sk-or-v1-...
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_MODEL=openai/gpt-4o-mini
+
+# Cloud Server (token & billing)
+CLOUD_API_URL=https://umkm-ai-cloud.up.railway.app
+CLOUD_API_KEY=your-license-key
+
+# Security
+N8N_WEBHOOK_SECRET=random-secret
+SECRET_KEY=random-secret
+
+# Notifikasi lead via Telegram (opsional)
+TELEGRAM_BOT_TOKEN=123456:ABCxxx
+```
+
+---
+
+## Mengelola Dashboard di VPS
+
+```bash
+# Cek status semua service
+systemctl status umkm-backend umkm-dashboard
+
+# Restart setelah update
+cd /opt/umkm-ai-suite && git pull
+cd dashboard && NEXT_PUBLIC_BACKEND_URL=https://panel.aimarketingstrategic.com npm run build
+cp -r .next/static .next/standalone/.next/static
+systemctl restart umkm-backend umkm-dashboard
+
+# Lihat log
+journalctl -u umkm-backend  -f
+journalctl -u umkm-dashboard -f
+```
+
+---
+
+## API Endpoints (Backend)
 
 | Method | Endpoint | Deskripsi |
 |--------|----------|-----------|
-| POST | `/api/wa/reply` | Terima & balas pesan WA (dari n8n) |
-| GET | `/api/wa/chats` | List chat aktif |
+| POST | `/api/wa/reply` | Balas pesan WA (dari n8n) |
+| GET | `/api/wa/chats` | Riwayat chat WA |
 | POST | `/api/content/generate` | Generate konten AI |
 | GET | `/api/content/library` | Library konten |
-| GET | `/api/token/balance` | Cek saldo token |
-| POST | `/api/token/sync-offline` | Sync transaksi offline |
-| GET | `/api/products` | List produk |
-| POST | `/api/products` | Tambah produk |
-| GET | `/api/faqs` | List FAQ |
-| POST | `/api/faqs` | Tambah FAQ |
+| POST | `/api/webchat/message` | Chat via web widget |
+| GET | `/api/webchat/leads` | Daftar leads web chat |
+| GET/PUT | `/api/webchat/config` | Konfigurasi widget |
+| GET | `/api/webchat/leads/export` | Export CSV leads |
+| GET | `/api/stats` | Stats terpadu dashboard |
+| GET | `/api/token/balance` | Saldo token |
 | GET/PUT | `/api/profile` | Profil bisnis |
+| GET/POST | `/api/products` | Produk |
+| GET/POST | `/api/faqs` | FAQ |
+| **GET** | **/docs** | Swagger UI (semua endpoint) |
+
+---
+
+## Memasang Web Chat di Website Client
+
+Setelah dashboard berjalan, buka **Web Chat → Konfigurasi Widget** untuk mendapatkan embed code.
+
+**Metode 1 — Backend Widget (JS snippet):**
+```html
+<!-- Tempel sebelum </body> di website client -->
+<!-- Copy kode lengkap dari webchat-widget/widget.html -->
+<script>
+  var BACKEND_URL = "https://panel.aimarketingstrategic.com";
+  var THEME_COLOR = "#16a34a";
+  var AGENT_NAME  = "AI Assistant";
+</script>
+```
+
+**Metode 2 — n8n iframe:**
+```html
+<iframe src="https://n8n.anda.com/webhook/WEBHOOK_ID/chat"
+  style="width:100%; height:600px; border:none; border-radius:12px;"
+></iframe>
+```
 
 ---
 
 ## Token System
 
-| Aksi | Token Digunakan |
-|------|----------------|
-| 1 WA Auto-Reply | 2 token |
-| Generate konten (semua platform) | 5 token |
-| Offline mode limit | 20 token |
-
----
-
-## Paket Harga
-
-| Paket | Token/bulan | Harga |
-|-------|-------------|-------|
-| Starter | 500 token | Rp 49.000/bulan |
-| Growth | 1.500 token | Rp 99.000/bulan |
-| Pro | Unlimited* | Rp 199.000/bulan |
+| Aksi | Token |
+|------|-------|
+| WA Auto-Reply | 2 token |
+| Web Chat (per pesan) | 2 token |
+| Generate konten | 5 token |
 
 ---
 
 ## Tech Stack
 
-- **Backend:** FastAPI + SQLAlchemy + SQLite (lokal)
-- **Cloud:** FastAPI + PostgreSQL
-- **AI:** OpenAI GPT-4o-mini
+- **Backend:** FastAPI + SQLAlchemy + SQLite
+- **Dashboard:** Next.js 14 + Tailwind CSS
+- **AI:** OpenRouter (GPT-4o-mini / model lain)
 - **Workflow:** n8n
-- **Dashboard:** Next.js 14
-- **Payment:** Midtrans / Xendit
-- **Deploy Cloud:** Railway / Render / VPS
-
----
-
-## Roadmap
-
-- [x] Modul 1: WA Auto-Reply AI
-- [x] Modul 4: Konten Marketing AI
-- [ ] Dashboard UI (Next.js) — in progress
-- [ ] Modul 2: Invoice AI
-- [ ] Modul 3: Manajemen Stok
-- [ ] Modul 5: Analisis Penjualan
-- [ ] Installer (PyInstaller)
-- [ ] Mobile app
+- **Deploy:** Nginx + Systemd + Certbot (VPS Ubuntu)
+- **Cloud billing:** Railway — repo terpisah [`umkm-ai-cloud`](https://github.com/fxgatotsuryanto/umkm-ai-cloud)
 
 ---
 

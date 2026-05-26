@@ -47,7 +47,10 @@ echo "Python deps installed."
 echo "=== [5/8] Build Next.js dashboard ==="
 cd "$APP_DIR/dashboard"
 npm install --silent
-npm run build
+NEXT_PUBLIC_BACKEND_URL="https://$DOMAIN" npm run build
+# Salin static files ke folder standalone (diperlukan Next.js standalone mode)
+cp -r .next/static .next/standalone/.next/static
+[ -d public ] && cp -r public .next/standalone/public || true
 cd "$APP_DIR"
 
 # .env file
@@ -90,7 +93,7 @@ WorkingDirectory=$APP_DIR/dashboard
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=NEXT_PUBLIC_BACKEND_URL=https://$DOMAIN
-ExecStart=$(which node) $APP_DIR/dashboard/node_modules/.bin/next start --port 3000
+ExecStart=$(which node) $APP_DIR/dashboard/.next/standalone/server.js
 Restart=always
 RestartSec=5
 StandardOutput=journal

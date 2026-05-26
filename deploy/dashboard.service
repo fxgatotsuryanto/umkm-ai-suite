@@ -1,0 +1,21 @@
+[Unit]
+Description=UMKM AI Suite — Dashboard Next.js
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/umkm-ai-suite/dashboard
+Environment=NODE_ENV=production
+Environment=PORT=3000
+# Ganti nilai ini dengan domain/IP backend yang diakses oleh browser client
+# (bukan 127.0.0.1 — harus URL publik karena Next.js diakses dari browser)
+Environment=NEXT_PUBLIC_BACKEND_URL=https://panel.aimarketingstrategic.com
+ExecStart=/usr/bin/node /opt/umkm-ai-suite/dashboard/.next/standalone/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
