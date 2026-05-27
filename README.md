@@ -66,7 +66,92 @@ npm run dev
 
 ---
 
-### Opsi B — VPS / Server Produksi (Recommended)
+### Opsi B — Railway (Recommended untuk deployment cepat)
+
+Deploy backend + dashboard ke Railway **tanpa VPS**. Setiap client UMKM punya dua Railway service dari satu repo.
+
+```
+https://umkm-backend-xxx.up.railway.app   ← FastAPI (backend)
+https://umkm-dashboard-xxx.up.railway.app ← Next.js (dashboard)
+```
+
+#### Langkah-langkah Deploy
+
+**Step 1 — Buat project Railway baru**
+
+1. Buka [railway.app](https://railway.app) → **New Project**
+2. Pilih **Deploy from GitHub repo** → pilih `fxgatotsuryanto/umkm-ai-suite`
+
+---
+
+**Step 2 — Deploy Backend (FastAPI)**
+
+Railway otomatis mendeteksi `railway.toml` di root dan menjalankan `uvicorn`.
+
+Di tab **Variables** service backend, isi:
+
+```
+OPENAI_API_KEY      = sk-or-v1-...          (dari openrouter.ai)
+OPENAI_BASE_URL     = https://openrouter.ai/api/v1
+OPENAI_MODEL        = openai/gpt-4o-mini
+BUSINESS_NAME       = Nama Toko Client
+N8N_WEBHOOK_SECRET  = secret-acak-panjang
+SECRET_KEY          = secret-acak-panjang
+CORS_ORIGINS        = https://umkm-dashboard-xxx.up.railway.app
+TELEGRAM_BOT_TOKEN  = (opsional, untuk notif lead)
+DATABASE_URL        = sqlite+aiosqlite:////data/umkm_local.db
+```
+
+> **Persistent data**: Di tab **Settings** → **Add Volume**, mount ke `/data`.  
+> Tanpa volume, database reset saat redeploy.
+
+Setelah deploy, catat URL backend, contoh:  
+`https://umkm-backend-xxx.up.railway.app`
+
+---
+
+**Step 3 — Deploy Dashboard (Next.js)**
+
+1. Di project yang sama, klik **+ New Service** → **GitHub Repo** (repo yang sama)
+2. Di **Settings** service baru ini, ubah **Root Directory** → `dashboard`
+3. Di tab **Variables**, isi:
+
+```
+NEXT_PUBLIC_BACKEND_URL = https://umkm-backend-xxx.up.railway.app
+```
+
+> ⚠️ `NEXT_PUBLIC_BACKEND_URL` harus diisi **sebelum** pertama kali deploy/build.  
+> Setelah ubah nilai ini, wajib trigger redeploy manual.
+
+Railway akan otomatis menjalankan `npm run build:railway` (dari `dashboard/railway.toml`).
+
+---
+
+**Step 4 — Update CORS Backend**
+
+Setelah dashboard ter-deploy dan dapat URL-nya (contoh `https://umkm-dashboard-yyy.up.railway.app`):
+
+1. Buka Variables service **backend**
+2. Update: `CORS_ORIGINS = https://umkm-dashboard-yyy.up.railway.app`
+3. Redeploy backend
+
+---
+
+**Step 5 — Test**
+
+Buka URL dashboard di browser → Login → Cek semua fitur.
+
+API docs tersedia di: `https://umkm-backend-xxx.up.railway.app/docs`
+
+---
+
+#### Replikasi per Client
+
+Untuk setiap client UMKM baru, **fork project** Railway atau buat project baru yang clone repo yang sama, lalu isi variabel berbeda (terutama `OPENAI_API_KEY`, `BUSINESS_NAME`, `CORS_ORIGINS`).
+
+---
+
+### Opsi C — VPS / Server Produksi
 
 Arsitektur produksi: **satu domain**, nginx sebagai reverse proxy:
 
