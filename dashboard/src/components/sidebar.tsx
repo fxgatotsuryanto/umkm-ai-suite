@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap, Globe } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, PenSquare, Settings, Zap, Globe, LogOut } from 'lucide-react';
 import { api, type Balance } from '@/lib/api';
 
 const navItems = [
@@ -18,8 +18,15 @@ const PACKAGE_MAX: Record<string, number> = { starter: 500, growth: 5000, pro: 9
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [balance, setBalance]     = useState<Balance | null>(null);
   const [storeName, setStoreName] = useState('Toko Saya');
+
+  function handleLogout() {
+    localStorage.removeItem('umkm_license');
+    localStorage.removeItem('umkm_business');
+    router.replace('/login');
+  }
 
   useEffect(() => {
     api.getBalance().then(setBalance).catch(() => {});
@@ -94,6 +101,13 @@ export default function Sidebar() {
             Isi Ulang
           </Link>
         </div>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 w-full px-4 py-2.5 mb-2 text-sm text-teal-400 hover:text-white hover:bg-teal-800/40 rounded-xl transition-colors"
+        >
+          <LogOut size={16} />
+          Keluar
+        </button>
       </div>
     </aside>
   );
