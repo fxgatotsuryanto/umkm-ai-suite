@@ -3,16 +3,17 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  MessageSquare, Sparkles, Search, SlidersHorizontal,
-  ArrowUpRight, TrendingUp, Coins, Check,
+  MessageSquare, Sparkles, Globe, ArrowUpRight,
+  TrendingUp, Coins, Check, Users,
 } from 'lucide-react';
-import { api, type Balance, type Chat } from '@/lib/api';
+import { api, type Stats, type Chat } from '@/lib/api';
 
-// ── Metric Card ───────────────────────────────────────────────────────────────
-function MetricCard({ label, value, trend, iconBg, icon, progressPct, extra }: {
-  label: string; value: string; trend?: string;
+function MetricCard({
+  label, value, sub, iconBg, icon, trend, bar,
+}: {
+  label: string; value: string; sub?: string;
   iconBg: string; icon: React.ReactNode;
-  progressPct?: number; extra?: React.ReactNode;
+  trend?: string; bar?: number;
 }) {
   return (
     <div className="card p-5">
@@ -28,63 +29,49 @@ function MetricCard({ label, value, trend, iconBg, icon, progressPct, extra }: {
           <ArrowUpRight size={13} /> {trend}
         </p>
       )}
-      {progressPct !== undefined && (
+      {sub && !trend && <p className="text-xs text-gray-400">{sub}</p>}
+      {bar !== undefined && (
         <div className="mt-2">
           <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-teal-500 h-1.5 rounded-full" style={{ width: `${progressPct}%` }} />
+            <div className="bg-teal-500 h-1.5 rounded-full" style={{ width: `${bar}%` }} />
           </div>
-          <p className="text-xs text-gray-400 mt-1">{progressPct.toFixed(1)}%</p>
+          <p className="text-xs text-gray-400 mt-1">{bar.toFixed(1)}% dipakai hari ini</p>
         </div>
       )}
-      {extra}
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [balance, setBalance]     = useState<Balance | null>(null);
-  const [chats, setChats]         = useState<Chat[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [stats, setStats]         = useState<Stats | null>(null);
+  const [recentChats, setChats]   = useState<Chat[]>([]);
   const [storeName, setStoreName] = useState('Admin');
-  const [search, setSearch]       = useState('');
-  const [contentCount, setContentCount] = useState(0);
+  const [loading, setLoading]     = useState(true);
 
   useEffect(() => {
     Promise.all([
-      api.getBalance().then(setBalance).catch(() => {}),
-      api.getChats(200).then(setChats).catch(() => {}),
-      api.getProfile().then(d => { if ('name' in d && d.name) setStoreName(d.name); }).catch(() => {}),
-      api.getContentLibrary({ limit: 100 }).then(d => setContentCount(d.length)).catch(() => {}),
+      api.getStats().then(setStats).catch(() => {}),
+      api.getChats(10).then(setChats).catch(() => {}),
+      api.getProfile()
+        .then(d => { if ('name' in d && d.name) setStoreName(d.name); })
+        .catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
 
-  const today = new Date().toDateString();
-  const chatsToday    = chats.filter(c => new Date(c.created_at).toDateString() === today).length;
-  const tokensToday   = chats.filter(c => new Date(c.created_at).toDateString() === today)
-                             .reduce((s, c) => s + c.tokens_used, 0);
-  const totalTokens   = (balance?.balance ?? 0) + tokensToday;
-  const tokenPct      = totalTokens > 0 ? Math.min(100, (tokensToday / totalTokens) * 100) : 0;
+  const today       = stats?.today;
+  const total       = stats?.total;
+  const tokensToday = today?.tokens_used ?? 0;
+  const tokenMax    = 500;
+  const tokenBar    = Math.min(100, (tokensToday / tokenMax) * 100);
 
-  // Latest unique contacts
-  const grouped = chats.reduce((acc, c) => {
-    if (!acc[c.wa_number]) acc[c.wa_number] = c;
-    return acc;
-  }, {} as Record<string, Chat>);
-
-  const filteredContacts = Object.values(grouped)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .filter(c =>
-      !search ||
-      c.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.wa_number.includes(search)
-    )
-    .slice(0, 6);
+  const conversionRate =
+    (total?.webchat_sessions ?? 0) > 0
+      ? (((total?.webchat_leads ?? 0) / (total?.webchat_sessions ?? 1)) * 100).toFixed(1)
+      : '—';
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-
-      {/* ── Header ─────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
@@ -100,78 +87,59 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Metric Cards ───────────────────────────────────── */}
+      {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
-          label="Chat Hari Ini"
-          value={chatsToday.toString()}
-          trend="+12%"
+          label="Chat WA Hari Ini"
+          value={loading ? '—' : String(today?.wa_chats ?? 0)}
+          sub={`Total: ${total?.wa_chats ?? 0} chat`}
           iconBg="bg-blue-50"
           icon={<MessageSquare size={18} className="text-blue-500" />}
+          trend={today?.wa_chats ? `+${today.wa_chats} hari ini` : undefined}
         />
         <MetricCard
-          label="Auto-Reply Rate"
-          value={chats.length > 0 ? '100%' : '—'}
-          trend="+1.2%"
-          iconBg="bg-teal-50"
-          icon={<TrendingUp size={18} className="text-teal-500" />}
+          label="Web Chat Leads"
+          value={loading ? '—' : String(today?.webchat_leads ?? 0)}
+          sub={`Total: ${total?.webchat_leads ?? 0} leads · Konversi ${conversionRate}%`}
+          iconBg="bg-green-50"
+          icon={<Users size={18} className="text-green-500" />}
+          trend={today?.webchat_leads ? `+${today.webchat_leads} hari ini` : undefined}
         />
         <MetricCard
           label="Token Terpakai (Hari Ini)"
-          value={`${tokensToday} Token`}
-          iconBg="bg-emerald-50"
-          icon={<Coins size={18} className="text-emerald-500" />}
-          progressPct={tokenPct}
+          value={loading ? '—' : `${tokensToday}`}
+          iconBg="bg-amber-50"
+          icon={<Coins size={18} className="text-amber-500" />}
+          bar={loading ? 0 : tokenBar}
         />
         <MetricCard
           label="Konten Dibuat"
-          value={contentCount.toString()}
+          value={loading ? '—' : String(today?.content_generated ?? 0)}
+          sub={`Total: ${total?.content_generated ?? 0} konten`}
           iconBg="bg-purple-50"
           icon={<Sparkles size={18} className="text-purple-500" />}
-          extra={
-            contentCount > 0 ? (
-              <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                <span>📸</span><span>🎵</span> multi-platform
-              </p>
-            ) : null
-          }
         />
       </div>
 
-      {/* ── Bottom Section ─────────────────────────────────── */}
+      {/* Bottom Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-        {/* Live WA Chats */}
+        {/* Recent WA Chats */}
         <div className="lg:col-span-2 card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900">Live WhatsApp Chats</h2>
+            <h2 className="font-bold text-gray-900">Pesan WA Terakhir</h2>
             <Link href="/wa" className="text-xs text-teal-600 hover:text-teal-700 font-semibold">
               Lihat semua →
             </Link>
           </div>
 
-          {/* Search + Filter */}
-          <div className="flex gap-2 mb-4">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Cari chat..."
-                className="w-full pl-10 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white transition-colors"
-              />
-            </div>
-            <button className="flex items-center gap-2 px-4 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium transition-colors">
-              <SlidersHorizontal size={14} /> Filter
-            </button>
-          </div>
-
-          {/* Chat List */}
           {loading ? (
             <div className="space-y-3">
-              {[1, 2, 3].map(i => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+              ))}
             </div>
-          ) : filteredContacts.length === 0 ? (
+          ) : recentChats.length === 0 ? (
             <div className="text-center py-10 text-gray-400">
               <MessageSquare size={36} className="mx-auto mb-2 opacity-20" />
               <p className="text-sm font-medium">Belum ada chat masuk</p>
@@ -179,10 +147,10 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-1">
-              {filteredContacts.map(chat => (
+              {recentChats.map(chat => (
                 <div
-                  key={chat.wa_number}
-                  className="flex items-center gap-3.5 px-3 py-3 rounded-xl hover:bg-gray-50 transition-colors cursor-default"
+                  key={chat.id}
+                  className="flex items-center gap-3.5 px-3 py-3 rounded-xl hover:bg-gray-50 transition-colors"
                 >
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                     {(chat.customer_name || chat.wa_number)[0].toUpperCase()}
@@ -193,16 +161,17 @@ export default function DashboardPage() {
                         {chat.customer_name || chat.wa_number}
                       </p>
                       <span className="text-xs text-gray-400 flex-shrink-0">
-                        {new Date(chat.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(chat.created_at).toLocaleTimeString('id-ID', {
+                          hour: '2-digit', minute: '2-digit',
+                        })}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 truncate mt-0.5">
-                      Last message: {chat.message_out.slice(0, 45)}
-                      {chat.message_out.length > 45 ? '...' : ''}
+                      {chat.message_out.slice(0, 55)}{chat.message_out.length > 55 ? '…' : ''}
                     </p>
                   </div>
                   <span className="flex-shrink-0 inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-full">
-                    <Check size={10} /> AI Replied
+                    <Check size={10} /> AI
                   </span>
                 </div>
               ))}
@@ -212,51 +181,55 @@ export default function DashboardPage() {
 
         {/* Right column */}
         <div className="space-y-5">
+          {/* WebChat mini stats */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                <Globe size={15} className="text-green-500" /> Web Chat
+              </h2>
+              <Link href="/webchat" className="text-xs text-teal-600 font-semibold">
+                Lihat →
+              </Link>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'Sesi', value: total?.webchat_sessions ?? 0 },
+                { label: 'Leads', value: total?.webchat_leads ?? 0 },
+                { label: 'Rate', value: `${conversionRate}%` },
+              ].map(({ label, value }) => (
+                <div key={label} className="text-center py-2 bg-gray-50 rounded-xl">
+                  <p className="text-lg font-bold text-gray-800">{loading ? '—' : value}</p>
+                  <p className="text-xs text-gray-400">{label}</p>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/webchat"
+              className="mt-3 flex items-center justify-center gap-2 w-full text-sm font-semibold text-green-700 bg-green-50 hover:bg-green-100 py-2 rounded-xl transition-colors"
+            >
+              <TrendingUp size={14} /> Lihat Leads
+            </Link>
+          </div>
+
           {/* Quick Actions */}
           <div className="card p-5">
             <h2 className="font-bold text-gray-900 mb-4">Quick Actions</h2>
             <div className="space-y-3">
               {[
-                { label: 'Buat Balasan Baru',    href: '/wa'     },
-                { label: 'Jadwal Konten',         href: '/konten' },
-                { label: 'Generate Ide Konten',   href: '/konten' },
+                { label: 'Lihat Chat WA',        href: '/wa'         },
+                { label: 'Generate Konten',       href: '/konten'     },
+                { label: 'Konfigurasi Widget',    href: '/webchat?tab=config' },
+                { label: 'Atur Produk & FAQ',     href: '/pengaturan' },
               ].map(item => (
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="block w-full text-center bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                  className="block w-full text-center bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
                 >
                   {item.label}
                 </Link>
               ))}
             </div>
-          </div>
-
-          {/* Recent Activity */}
-          <div className="card p-5">
-            <h2 className="font-bold text-gray-900 mb-4">Aktivitas Terbaru</h2>
-            {chats.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">Belum ada aktivitas</p>
-            ) : (
-              <div className="space-y-4">
-                {chats.slice(0, 4).map(c => (
-                  <div key={c.id} className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-xs flex-shrink-0">
-                      {(c.customer_name || c.wa_number)[0].toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs text-gray-700 leading-snug">
-                        <span className="font-semibold">{c.customer_name || c.wa_number}</span>
-                        {' '}mengirim pesan baru ke toko
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {new Date(c.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>

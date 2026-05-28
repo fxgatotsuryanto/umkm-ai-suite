@@ -22,8 +22,11 @@ class Settings(BaseSettings):
     BUSINESS_NAME: str = "UMKM Saya"
     BUSINESS_TYPE: str = "retail"
 
+    TELEGRAM_BOT_TOKEN: str = ""  # untuk notifikasi lead webchat
+
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
+

@@ -10,7 +10,14 @@ from backend.modules.token_middleware import deduct_token, refund_token
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+_client: AsyncOpenAI | None = None
+
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+    return _client
 
 
 async def _build_context(db: AsyncSession) -> str:
@@ -85,7 +92,7 @@ Aturan:
 6. Gunakan emoji secukupnya agar terasa personal"""
 
     try:
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},

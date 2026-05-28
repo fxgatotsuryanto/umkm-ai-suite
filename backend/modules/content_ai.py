@@ -11,7 +11,14 @@ from backend.modules.token_middleware import deduct_token, refund_token
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+_client: AsyncOpenAI | None = None
+
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+    return _client
 
 PLATFORM_STYLES = {
     "instagram": "Visual, engaging, emoji-heavy, hashtag-rich. Maksimal 2200 karakter. Hook kuat di awal.",
@@ -112,7 +119,7 @@ async def generate_content(
         return {"success": False, "content": None, "error": "Gagal membangun prompt konten."}
 
     try:
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=800,
