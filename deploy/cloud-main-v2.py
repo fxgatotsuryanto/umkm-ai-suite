@@ -376,6 +376,22 @@ async def update_user(key: str, req: UserUpdateRequest, db: AsyncSession = Depen
     return {"message": "User diperbarui", "key": key}
 
 
+@app.delete("/admin/users/{key}", tags=["Admin"], dependencies=[Depends(require_master_key)])
+async def delete_user(key: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(License).where(License.key == key))
+    lic = result.scalar_one_or_none()
+    if not lic:
+        raise HTTPException(status_code=404, detail="License tidak ditemukan")
+    # Hapus token account & transaksi terkait
+    await db.execute(select(TokenAccount).where(TokenAccount.license_key == key))
+    acct = (await db.execute(select(TokenAccount).where(TokenAccount.license_key == key))).scalar_one_or_none()
+    if acct:
+        await db.delete(acct)
+    await db.delete(lic)
+    await db.commit()
+    return {"message": f"License '{lic.business_name}' berhasil dihapus", "key": key}
+
+
 @app.post("/admin/token/adjust", tags=["Admin"], dependencies=[Depends(require_master_key)])
 async def admin_token_adjust(req: TokenAdjustRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(License).where(License.key == req.license_key))
