@@ -69,8 +69,8 @@ class Base(DeclarativeBase):
 class License(Base):
     __tablename__ = "licenses"
     key:           Mapped[str]               = mapped_column(String(120), primary_key=True)
-    business_name: Mapped[str]               = mapped_column(String(200))
-    email:         Mapped[str]               = mapped_column(String(200))
+    business_name: Mapped[str]               = mapped_column(String(200), unique=True)
+    email:         Mapped[str]               = mapped_column(String(200), unique=True)
     package:       Mapped[str]               = mapped_column(String(50))
     expires_at:    Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at:    Mapped[datetime]           = mapped_column(DateTime)
@@ -193,8 +193,10 @@ class TopupRequest(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    active:  Optional[bool] = None
-    package: Optional[str]  = None
+    active:        Optional[bool] = None
+    package:       Optional[str]  = None
+    business_name: Optional[str]  = None
+    email:         Optional[str]  = None
 
 
 class TokenAdjustRequest(BaseModel):
@@ -350,11 +352,26 @@ async def update_user(key: str, req: UserUpdateRequest, db: AsyncSession = Depen
         if req.package not in PACKAGES:
             raise HTTPException(status_code=400, detail=f"Package tidak valid: {req.package}")
         lic.package = req.package
-        result = await db.execute(
-            select(TokenAccount).where(TokenAccount.license_key == key))
-        acct = result.scalar_one_or_none()
+        acct_res = await db.execute(select(TokenAccount).where(TokenAccount.license_key == key))
+        acct = acct_res.scalar_one_or_none()
         if acct:
             acct.package = req.package
+    if req.business_name is not None:
+        new_name = req.business_name.strip()
+        dup = await db.execute(
+            select(License).where(func.lower(License.business_name) == new_name.lower(), License.key != key)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Nama toko '{new_name}' sudah digunakan")
+        lic.business_name = new_name
+    if req.email is not None:
+        new_email = req.email.strip().lower()
+        dup = await db.execute(
+            select(License).where(func.lower(License.email) == new_email, License.key != key)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Email '{req.email}' sudah digunakan")
+        lic.email = new_email
     await db.commit()
     return {"message": "User diperbarui", "key": key}
 
@@ -433,6 +450,20 @@ async def admin_revenue(db: AsyncSession = Depends(get_db)):
 async def issue_license(req: IssueLicenseRequest, db: AsyncSession = Depends(get_db)):
     if req.package not in PACKAGES:
         raise HTTPException(status_code=400, detail=f"Package tidak valid: {req.package}")
+
+    # Cek duplikat nama toko
+    dup_name = await db.execute(
+        select(License).where(func.lower(License.business_name) == req.business_name.strip().lower())
+    )
+    if dup_name.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Nama toko '{req.business_name}' sudah terdaftar")
+
+    # Cek duplikat email
+    dup_email = await db.execute(
+        select(License).where(func.lower(License.email) == req.email.strip().lower())
+    )
+    if dup_email.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Email '{req.email}' sudah terdaftar")
 
     license_key = "umkm-" + secrets.token_urlsafe(24)
     expires_at  = datetime.utcnow() + timedelta(days=30 * req.months)
