@@ -948,10 +948,14 @@ function renderUsers(list) {
       <td><strong>${u.balance.toLocaleString('id-ID')}</strong></td>
       <td style="font-size:11px; color:var(--muted);">${u.expires_at ? fDate(u.expires_at) : '—'}</td>
       <td><span class="badge ${u.active?'b-ok':'b-err'}">${u.active?'● Aktif':'● Nonaktif'}</span></td>
-      <td>
+      <td style="display:flex; gap:6px;">
         <button onclick="toggleUser('${x(u.key)}',${!u.active})"
                 class="btn ${u.active?'btn-e':'btn-ok'}" style="padding:5px 10px; font-size:11px;">
           ${u.active?'Nonaktifkan':'Aktifkan'}
+        </button>
+        <button onclick="deleteUser('${x(u.key)}','${x(u.business_name)}')"
+                class="btn btn-e" style="padding:5px 10px; font-size:11px; background:#dc2626;">
+          Hapus
         </button>
       </td>
     </tr>`).join('');
@@ -966,6 +970,17 @@ async function toggleUser(key, active) {
   await api(`/admin/users/${encodeURIComponent(key)}`, {method:'PATCH', body: JSON.stringify({active})});
   toast(active ? 'User diaktifkan ✓' : 'User dinonaktifkan');
   loadUsers();
+}
+
+async function deleteUser(key, name) {
+  if (!confirm(`Hapus lisensi "${name}"?\n\nTindakan ini tidak bisa dibatalkan.`)) return;
+  try {
+    await api(`/admin/users/${encodeURIComponent(key)}`, {method:'DELETE'});
+    toast(`Lisensi "${name}" dihapus ✓`);
+    loadUsers();
+  } catch(e) {
+    toast('Gagal menghapus: ' + e.message, true);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
