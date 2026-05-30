@@ -7,12 +7,12 @@ import { NextRequest, NextResponse } from 'next/server';
 //   3. Default         — URL cloud default yang sudah di-deploy
 const CLOUD_URL =
   process.env.CLOUD_API_URL ??
-  'https://umkm-ai-cloud.up.railway.app';
+  'https://umkm-ai-cloud-production-d038.up.railway.app';
 
 const BACKEND_URL =
   process.env.BACKEND_URL ??
   process.env.NEXT_PUBLIC_BACKEND_URL ??
-  null;
+  'https://umkm-ai-suite-production.up.railway.app';
 
 export async function POST(req: NextRequest) {
   try {
