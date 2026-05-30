@@ -1,6 +1,10 @@
 'use client';
 import { useState } from 'react';
 
+// URL cloud dipanggil langsung dari browser (client-side) untuk menghindari
+// masalah server-side fetch antar project Railway.
+const CLOUD_URL = 'https://umkm-ai-cloud-production-d038.up.railway.app';
+
 export default function LoginPage() {
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
@@ -11,18 +15,24 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ license_key: key }),
+      const res = await fetch(`${CLOUD_URL}/license/validate`, {
+        method: 'GET',
+        headers: { 'x-api-key': key.trim() },
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail ?? `Gagal validasi (${res.status})`);
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? 'Login gagal');
-      localStorage.setItem('umkm_license', key);
+      localStorage.setItem('umkm_license', key.trim());
       localStorage.setItem('umkm_business', data.business_name ?? '');
       window.location.href = '/';
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'License key tidak valid');
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Tidak bisa terhubung ke server. Periksa koneksi internet Anda.');
+      } else {
+        setError(err instanceof Error ? err.message : 'License key tidak valid');
+      }
     } finally {
       setLoading(false);
     }
