@@ -36,8 +36,7 @@ async def _get_config(db: AsyncSession) -> WebChatConfig:
     if not config:
         config = WebChatConfig()
         db.add(config)
-        await db.commit()
-        await db.refresh(config)
+        await db.flush()
     return config
 
 
@@ -87,8 +86,7 @@ async def _get_or_create_session(db: AsyncSession, session_id: str) -> WebChatSe
     if not session:
         session = WebChatSession(session_id=session_id)
         db.add(session)
-        await db.commit()
-        await db.refresh(session)
+        await db.flush()
     return session
 
 

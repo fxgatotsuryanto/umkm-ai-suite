@@ -12,8 +12,20 @@ class Base(DeclarativeBase):
 
 
 async def get_db():
-    async with AsyncSessionLocal() as session:
+    session = AsyncSessionLocal()
+    try:
         yield session
+    except Exception:
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            await session.close()
+        except Exception:
+            pass
 
 
 async def init_db():

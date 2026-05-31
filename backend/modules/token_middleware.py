@@ -18,8 +18,7 @@ async def _get_or_create_balance(db: AsyncSession) -> TokenBalance:
     if not token:
         token = TokenBalance(id=1, balance=0)
         db.add(token)
-        await db.commit()
-        await db.refresh(token)
+        await db.flush()
     return token
 
 
@@ -49,7 +48,7 @@ async def deduct_token(db: AsyncSession, action: str, reference_id: str = "") ->
         synced=False,
     )
     db.add(ledger)
-    await db.commit()
+    await db.flush()
     return True
 
 
