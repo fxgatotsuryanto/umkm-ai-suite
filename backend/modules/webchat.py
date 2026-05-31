@@ -167,9 +167,8 @@ async def handle_webchat(
     system_prompt_extra = config.system_prompt_extra or ""
     lead_captured    = wchat_session.lead_captured
 
-    # Commit semua perubahan dan tutup session SEBELUM panggil OpenAI
+    # Commit semua perubahan SEBELUM panggil OpenAI (get_db() akan close otomatis setelah return)
     await db.commit()
-    await db.close()
 
     if not token_ok:
         return {
