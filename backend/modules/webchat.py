@@ -156,12 +156,11 @@ async def handle_webchat(
             "tokens_used": 0,
         }
 
-    config, session, history, context = await asyncio.gather(
-        _get_config(db),
-        _get_or_create_session(db, session_id),
-        _get_history(db, session_id),
-        _build_context(db),
-    )
+    # Jalankan secara sequential — asyncio.gather pada satu AsyncSession menyebabkan crash
+    config  = await _get_config(db)
+    session = await _get_or_create_session(db, session_id)
+    history = await _get_history(db, session_id)
+    context = await _build_context(db)
 
     token_ok = await deduct_token(db, "webchat", reference_id=session_id)
     if not token_ok:
