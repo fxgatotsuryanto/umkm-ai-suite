@@ -224,6 +224,34 @@ async def token_balance(db: AsyncSession = Depends(get_db)):
     return await get_balance(db)
 
 
+@router.post("/token/pull-from-cloud", tags=["Token"])
+async def token_pull_from_cloud(db: AsyncSession = Depends(get_db)):
+    """Sync token balance dari cloud ke local. Jalankan setelah top up di admin panel."""
+    if not settings.CLOUD_API_URL or not settings.CLOUD_API_KEY:
+        return {"success": False, "message": "CLOUD_API_URL atau CLOUD_API_KEY belum di-set"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{settings.CLOUD_API_URL}/license/validate",
+                headers={"x-api-key": settings.CLOUD_API_KEY},
+            )
+        if resp.status_code != 200:
+            return {"success": False, "message": f"Cloud error: {resp.status_code}"}
+        data = resp.json()
+        cloud_balance = data.get("token_balance") or data.get("tokens") or data.get("balance")
+        if cloud_balance is None:
+            return {"success": False, "message": f"Cloud tidak mengembalikan balance. Response: {data}"}
+        local = await get_balance(db)
+        diff = int(cloud_balance) - local["balance"]
+        if diff > 0:
+            new_bal = await add_token(db, diff, action="sync_from_cloud")
+            return {"success": True, "added": diff, "new_balance": new_bal}
+        return {"success": True, "added": 0, "new_balance": local["balance"],
+                "message": "Local balance sudah sama atau lebih tinggi dari cloud"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @router.post("/token/sync-offline", tags=["Token"])
 async def token_sync_offline(db: AsyncSession = Depends(get_db)):
     unsynced = await get_unsynced_transactions(db)
