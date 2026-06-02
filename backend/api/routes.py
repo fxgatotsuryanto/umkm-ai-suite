@@ -75,6 +75,58 @@ class ProfileUpdate(BaseModel):
     wa_greeting: Optional[str] = None
 
 
+class LoginRequest(BaseModel):
+    license_key: str
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+@router.post("/auth/login", tags=["Auth"])
+async def login(req: LoginRequest):
+    key = req.license_key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="License key tidak boleh kosong")
+
+    # Validasi lokal: cocokkan dengan CLOUD_API_KEY yang di-set di env
+    if settings.CLOUD_API_KEY and key == settings.CLOUD_API_KEY:
+        return {"success": True, "business_name": settings.BUSINESS_NAME}
+
+    # Validasi via cloud server jika CLOUD_API_URL di-set
+    if settings.CLOUD_API_URL and settings.CLOUD_API_URL != "https://your-cloud.railway.app":
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.get(
+                    f"{settings.CLOUD_API_URL}/license/validate",
+                    headers={"x-api-key": key},
+                )
+            if r.status_code == 200:
+                data = r.json()
+                # Simpan key sebagai CLOUD_API_KEY runtime jika belum di-set
+                if not settings.CLOUD_API_KEY:
+                    settings.CLOUD_API_KEY = key
+                return {
+                    "success": True,
+                    "business_name": data.get("business_name", settings.BUSINESS_NAME),
+                    "package": data.get("package", ""),
+                    "expires_at": data.get("expires_at"),
+                }
+        except Exception:
+            pass
+
+    raise HTTPException(status_code=401, detail="License key tidak valid")
+
+
+@router.get("/auth/me", tags=["Auth"])
+async def auth_me():
+    """Cek apakah backend sudah terkonfigurasi dengan license key."""
+    has_key = bool(settings.CLOUD_API_KEY)
+    return {
+        "configured": has_key,
+        "business_name": settings.BUSINESS_NAME,
+        "cloud_url": settings.CLOUD_API_URL if has_key else None,
+    }
+
+
 # ── WA Auto-Reply ─────────────────────────────────────────────────────────────
 
 @router.post("/wa/reply", tags=["WhatsApp"])

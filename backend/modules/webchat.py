@@ -7,6 +7,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
+from backend.db.database import AsyncSessionLocal
 from backend.db.models import (
     BusinessProfile,
     FAQ,
@@ -36,8 +37,7 @@ async def _get_config(db: AsyncSession) -> WebChatConfig:
     if not config:
         config = WebChatConfig()
         db.add(config)
-        await db.commit()
-        await db.refresh(config)
+        await db.flush()
     return config
 
 
@@ -87,8 +87,7 @@ async def _get_or_create_session(db: AsyncSession, session_id: str) -> WebChatSe
     if not session:
         session = WebChatSession(session_id=session_id)
         db.add(session)
-        await db.commit()
-        await db.refresh(session)
+        await db.flush()
     return session
 
 
@@ -149,41 +148,40 @@ async def handle_webchat(
 ) -> dict:
     message = message.strip()
     if not message:
-        return {
-            "success": False,
-            "reply": "Pesan tidak boleh kosong.",
-            "session_id": session_id,
-            "tokens_used": 0,
-        }
+        return {"success": False, "reply": "Pesan tidak boleh kosong.",
+                "session_id": session_id, "tokens_used": 0}
 
-    config, session, history, context = await asyncio.gather(
-        _get_config(db),
-        _get_or_create_session(db, session_id),
-        _get_history(db, session_id),
-        _build_context(db),
-    )
+    # ── FASE 1: Ambil semua data dari DB, commit, tutup session ───────────────
+    # Penting: session DB HARUS ditutup sebelum await ke OpenAI.
+    # Jika tidak, event loop context-switch saat await OpenAI bisa menyebabkan
+    # konflik state pada SQLAlchemy session (IllegalStateChangeError).
 
-    token_ok = await deduct_token(db, "webchat", reference_id=session_id)
+    config       = await _get_config(db)
+    wchat_session = await _get_or_create_session(db, session_id)
+    history      = await _get_history(db, session_id)
+    context      = await _build_context(db)
+    token_ok     = await deduct_token(db, "webchat", reference_id=session_id)
+
+    # Snapshot data yang dibutuhkan setelah session ditutup
+    cta_wa_number    = config.cta_wa_number or ""
+    system_prompt_extra = config.system_prompt_extra or ""
+    lead_captured    = wchat_session.lead_captured
+
+    # Commit semua perubahan SEBELUM panggil OpenAI (get_db() akan close otomatis setelah return)
+    await db.commit()
+
     if not token_ok:
         return {
             "success": False,
-            "reply": (
-                "Maaf, layanan chat sedang tidak tersedia. "
-                "Silakan hubungi kami langsung."
-            ),
+            "reply": "Maaf, saldo token habis. Silakan hubungi admin.",
             "session_id": session_id,
             "tokens_used": 0,
         }
 
-    business_name = (
-        context.split("\n")[0].replace("Nama Bisnis: ", "") if context else "kami"
-    )
-
-    cta_wa = ""
-    if config.cta_wa_number:
-        cta_wa = f"\nJika pelanggan siap, arahkan ke WhatsApp: wa.me/{config.cta_wa_number}"
-
-    extra = f"\n{config.system_prompt_extra}" if config.system_prompt_extra.strip() else ""
+    # ── FASE 2: Bangun prompt & panggil OpenAI (tanpa DB session aktif) ───────
+    business_name = context.split("\n")[0].replace("Nama Bisnis: ", "") if context else "kami"
+    cta_wa = f"\nJika pelanggan siap, arahkan ke WhatsApp: wa.me/{cta_wa_number}" if cta_wa_number else ""
+    extra  = f"\n{system_prompt_extra}" if system_prompt_extra.strip() else ""
 
     system_prompt = f"""Persona:
 Anda adalah AI Customer Service untuk {business_name}. Anda membantu pengunjung website mendapatkan informasi produk dan layanan secara ramah dan profesional.
@@ -224,66 +222,61 @@ ATURAN:
             temperature=0.7,
         )
     except APIConnectionError as e:
-        await refund_token(db, "webchat", reference_id=session_id)
         logger.error("Webchat AI connection error: %s", e)
-        return {
-            "success": False,
-            "reply": "Maaf, AI sedang tidak dapat dihubungi. Silakan coba lagi.",
-            "session_id": session_id,
-            "tokens_used": 0,
-            "error": str(e),
-        }
+        return {"success": False, "session_id": session_id, "tokens_used": 0,
+                "reply": "Maaf, AI sedang tidak dapat dihubungi. Silakan coba lagi.",
+                "error": str(e)}
     except APIStatusError as e:
-        await refund_token(db, "webchat", reference_id=session_id)
         logger.error("Webchat AI API error %s: %s", e.status_code, e.message)
-        return {
-            "success": False,
-            "reply": "Maaf, terjadi kesalahan pada layanan AI. Silakan coba lagi.",
-            "session_id": session_id,
-            "tokens_used": 0,
-            "error": f"{e.status_code}: {e.message}",
-        }
+        return {"success": False, "session_id": session_id, "tokens_used": 0,
+                "reply": "Maaf, terjadi kesalahan pada layanan AI. Silakan coba lagi.",
+                "error": f"{e.status_code}: {e.message}"}
     except Exception as e:
-        await refund_token(db, "webchat", reference_id=session_id)
         logger.exception("Webchat unexpected error")
-        return {
-            "success": False,
-            "reply": "Maaf, terjadi kesalahan tidak terduga.",
-            "session_id": session_id,
-            "tokens_used": 0,
-            "error": str(e),
-        }
+        return {"success": False, "session_id": session_id, "tokens_used": 0,
+                "reply": "Maaf, terjadi kesalahan tidak terduga.", "error": str(e)}
 
     reply = response.choices[0].message.content
 
-    user_msg = WebChatMessage(session_id=session_id, role="user", content=message)
-    bot_msg = WebChatMessage(session_id=session_id, role="assistant", content=reply)
-    db.add(user_msg)
-    db.add(bot_msg)
-
+    # ── FASE 3: Simpan hasil ke DB dengan session BARU ────────────────────────
     lead = _extract_lead(reply)
     just_captured = False
-    if lead and not session.lead_captured:
-        if lead.get("nama"):
-            session.visitor_name = lead["nama"]
-        if lead.get("wa"):
-            session.visitor_wa = lead["wa"]
-        if lead.get("kebutuhan"):
-            session.kebutuhan = lead["kebutuhan"]
-        if lead.get("solusi"):
-            session.solusi = lead["solusi"]
-        session.lead_captured = True
-        just_captured = True
 
-    await db.commit()
+    async with AsyncSessionLocal() as new_db:
+        new_db.add(WebChatMessage(session_id=session_id, role="user",    content=message))
+        new_db.add(WebChatMessage(session_id=session_id, role="assistant", content=reply))
 
-    if just_captured:
-        await _notify_lead(config, session)
+        if lead and not lead_captured:
+            from sqlalchemy import select as sa_select
+            res = await new_db.execute(
+                sa_select(WebChatSession).where(WebChatSession.session_id == session_id)
+            )
+            wcs = res.scalar_one_or_none()
+            if wcs:
+                if lead.get("nama"):      wcs.visitor_name = lead["nama"]
+                if lead.get("wa"):        wcs.visitor_wa   = lead["wa"]
+                if lead.get("kebutuhan"): wcs.kebutuhan    = lead["kebutuhan"]
+                if lead.get("solusi"):    wcs.solusi       = lead["solusi"]
+                wcs.lead_captured = True
+                just_captured = True
+
+        await new_db.commit()
+
+        if just_captured:
+            # Re-load config untuk notifikasi
+            cfg_res = await new_db.execute(sa_select(WebChatConfig).limit(1))
+            cfg = cfg_res.scalar_one_or_none()
+            wcs_res = await new_db.execute(
+                sa_select(WebChatSession).where(WebChatSession.session_id == session_id)
+            )
+            wcs_final = wcs_res.scalar_one_or_none()
+            if cfg and wcs_final:
+                await _notify_lead(cfg, wcs_final)
 
     return {
         "success": True,
         "reply": reply,
         "session_id": session_id,
         "tokens_used": 2,
-        "lead_captured": session.lead_captured,
+        "lead_captured": just_captured or lead_captured,
     }
