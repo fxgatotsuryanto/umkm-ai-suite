@@ -224,6 +224,14 @@ async def token_balance(db: AsyncSession = Depends(get_db)):
     return await get_balance(db)
 
 
+@router.post("/token/add", tags=["Token"])
+async def token_add(amount: int, db: AsyncSession = Depends(get_db)):
+    """Tambah token ke balance lokal (gunakan setelah top up di cloud admin panel)."""
+    if amount <= 0:
+        return {"success": False, "message": "Amount harus lebih dari 0"}
+    new_bal = await add_token(db, amount, action="manual_topup")
+    return {"success": True, "added": amount, "new_balance": new_bal}
+
 @router.post("/token/pull-from-cloud", tags=["Token"])
 async def token_pull_from_cloud(db: AsyncSession = Depends(get_db)):
     """Sync token balance dari cloud ke local. Jalankan setelah top up di admin panel."""
@@ -232,13 +240,13 @@ async def token_pull_from_cloud(db: AsyncSession = Depends(get_db)):
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
-                f"{settings.CLOUD_API_URL}/license/validate",
+                f"{settings.CLOUD_API_URL}/token/balance",
                 headers={"x-api-key": settings.CLOUD_API_KEY},
             )
         if resp.status_code != 200:
             return {"success": False, "message": f"Cloud error: {resp.status_code}"}
         data = resp.json()
-        cloud_balance = data.get("token_balance") or data.get("tokens") or data.get("balance")
+        cloud_balance = data.get("balance") or data.get("token_balance") or data.get("tokens")
         if cloud_balance is None:
             return {"success": False, "message": f"Cloud tidak mengembalikan balance. Response: {data}"}
         local = await get_balance(db)
