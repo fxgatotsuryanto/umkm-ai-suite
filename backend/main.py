@@ -1,12 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from backend.config import settings
-from backend.db.database import init_db
+from backend.db.database import init_db, AsyncSessionLocal
 from backend.api.routes import router
 
 logging.basicConfig(level=logging.INFO)
@@ -185,6 +186,34 @@ _WIDGET_JS = r"""
 """
 
 
+async def _sync_tokens_from_cloud() -> None:
+    """Saat startup, ambil saldo token terkini dari cloud dan simpan ke local DB."""
+    if not settings.CLOUD_API_URL or not settings.CLOUD_API_KEY:
+        logger.warning("CLOUD_API_URL/CLOUD_API_KEY tidak di-set, skip token sync")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{settings.CLOUD_API_URL}/token/balance",
+                headers={"x-api-key": settings.CLOUD_API_KEY},
+            )
+        if resp.status_code != 200:
+            logger.warning("Token sync gagal: cloud returned %s", resp.status_code)
+            return
+        cloud_balance = resp.json().get("balance", 0)
+        from backend.modules.token_middleware import get_balance, add_token
+        async with AsyncSessionLocal() as db:
+            local = await get_balance(db)
+            diff = cloud_balance - local["balance"]
+            if diff > 0:
+                await add_token(db, diff, action="sync_from_cloud")
+                logger.info("Token sync OK: +%d dari cloud, balance=%d", diff, cloud_balance)
+            else:
+                logger.info("Token sync: local(%d) >= cloud(%d), skip", local["balance"], cloud_balance)
+    except Exception as e:
+        logger.warning("Token sync error (non-fatal): %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up — initializing database...")
@@ -194,7 +223,38 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("Database init FAILED: %s", e)
         raise
+    await _sync_tokens_from_cloud()
+
+    # Background task: sync usage ke cloud setiap 5 menit
+    import asyncio as _asyncio
+
+    async def _periodic_sync():
+        while True:
+            await _asyncio.sleep(300)
+            try:
+                from backend.modules.token_middleware import get_unsynced_transactions, mark_synced
+                async with AsyncSessionLocal() as db:
+                    unsynced = await get_unsynced_transactions(db)
+                    if not unsynced:
+                        continue
+                    payload = [{"id": t.id, "action": t.action, "amount": t.amount,
+                                "balance_after": t.balance_after, "reference_id": t.reference_id,
+                                "created_at": t.created_at.isoformat()} for t in unsynced]
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        r = await client.post(
+                            f"{settings.CLOUD_API_URL}/api/sync/transactions",
+                            json={"transactions": payload, "api_key": settings.CLOUD_API_KEY},
+                        )
+                    if r.status_code == 200:
+                        async with AsyncSessionLocal() as db2:
+                            await mark_synced(db2, [t.id for t in unsynced])
+                        logger.info("Periodic sync: %d transaksi ter-sync ke cloud", len(unsynced))
+            except Exception as e:
+                logger.debug("Periodic sync error (non-fatal): %s", e)
+
+    sync_task = _asyncio.create_task(_periodic_sync())
     yield
+    sync_task.cancel()
     logger.info("Shutting down")
 
 
