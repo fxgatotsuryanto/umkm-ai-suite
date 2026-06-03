@@ -1,9 +1,10 @@
 'use client';
 import { useState } from 'react';
 
-// URL cloud dipanggil langsung dari browser (client-side) untuk menghindari
-// masalah server-side fetch antar project Railway.
+// URL cloud dipanggil langsung dari browser untuk validasi license key.
 const CLOUD_URL = 'https://umkm-ai-cloud-production-d038.up.railway.app';
+// URL backend lokal untuk menyimpan key ke DB (agar backend bisa sync token).
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL ?? '').replace(/\/$/, '');
 
 export default function LoginPage() {
   const [key, setKey] = useState('');
@@ -15,15 +16,28 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
+      // 1. Validasi license key ke cloud
       const res = await fetch(`${CLOUD_URL}/license/validate`, {
         method: 'GET',
         headers: { 'x-api-key': key.trim() },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail ?? `Gagal validasi (${res.status})`);
+        throw new Error(data.detail ?? `License key tidak valid (${res.status})`);
       }
       const data = await res.json();
+
+      // 2. Simpan key ke backend lokal agar backend bisa sync token ke cloud
+      if (BACKEND_URL) {
+        await fetch(`${BACKEND_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ license_key: key.trim() }),
+        }).catch(() => {
+          // non-fatal: backend mungkin sedang cold start
+        });
+      }
+
       localStorage.setItem('umkm_license', key.trim());
       localStorage.setItem('umkm_business', data.business_name ?? '');
       window.location.href = '/';

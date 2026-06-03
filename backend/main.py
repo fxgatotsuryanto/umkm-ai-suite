@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy import select
 
 from backend.config import settings
 from backend.db.database import init_db, AsyncSessionLocal
@@ -35,7 +36,6 @@ _WIDGET_JS = r"""
 
   if (!BASE) { console.warn('[UMKM Widget] UMKM_BACKEND tidak di-set'); return; }
 
-  /* ── CSS ── */
   var style = document.createElement('style');
   style.textContent = [
     '#_uw{--p:'+COLOR+';font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;position:fixed;bottom:24px;right:24px;z-index:99999}',
@@ -71,7 +71,6 @@ _WIDGET_JS = r"""
   ].join('');
   document.head.appendChild(style);
 
-  /* ── HTML ── */
   var wrap = document.createElement('div');
   wrap.id = '_uw';
   wrap.innerHTML = [
@@ -109,7 +108,6 @@ _WIDGET_JS = r"""
   try { hist = JSON.parse(localStorage.getItem(HK) || '[]'); } catch(e){}
   hist.forEach(function(m){ addMsg(m.r, m.t, false); });
 
-  /* Ambil config dari backend */
   fetch(BASE + '/api/webchat/widget-config')
     .then(function(r){ return r.json(); })
     .then(function(c){
@@ -186,16 +184,33 @@ _WIDGET_JS = r"""
 """
 
 
+async def _get_cloud_key_from_db() -> str | None:
+    """Baca license key dari DB. Tidak ada env var fallback."""
+    try:
+        from backend.db.models import AppSettings
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(
+                select(AppSettings).where(AppSettings.key == "cloud_api_key")
+            )
+            row = res.scalar_one_or_none()
+            return row.value if row and row.value else None
+    except Exception:
+        return None
+
+
 async def _sync_tokens_from_cloud() -> None:
-    """Saat startup, ambil saldo token terkini dari cloud dan simpan ke local DB."""
-    if not settings.CLOUD_API_URL or not settings.CLOUD_API_KEY:
-        logger.warning("CLOUD_API_URL/CLOUD_API_KEY tidak di-set, skip token sync")
+    cloud_key = await _get_cloud_key_from_db()
+    if not cloud_key:
+        logger.warning("License key belum dikonfigurasi, skip token sync saat startup")
+        return
+    if not settings.CLOUD_API_URL or settings.CLOUD_API_URL == "https://your-cloud.railway.app":
+        logger.warning("CLOUD_API_URL belum dikonfigurasi, skip token sync")
         return
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{settings.CLOUD_API_URL}/token/balance",
-                headers={"x-api-key": settings.CLOUD_API_KEY},
+                headers={"x-api-key": cloud_key},
             )
         if resp.status_code != 200:
             logger.warning("Token sync gagal: cloud returned %s", resp.status_code)
@@ -225,20 +240,23 @@ async def lifespan(app: FastAPI):
         raise
     await _sync_tokens_from_cloud()
 
-    # Background task: sync usage ke cloud setiap 5 menit
     import asyncio as _asyncio
 
     async def _periodic_sync():
         while True:
             await _asyncio.sleep(300)
             try:
+                cloud_key = await _get_cloud_key_from_db()
+                if not cloud_key:
+                    continue
+                if not settings.CLOUD_API_URL or settings.CLOUD_API_URL == "https://your-cloud.railway.app":
+                    continue
+
                 from backend.modules.token_middleware import (
                     get_unsynced_transactions, mark_synced, get_balance, add_token
                 )
-                if not settings.CLOUD_API_URL or not settings.CLOUD_API_KEY:
-                    continue
 
-                # 1. Push usage ke cloud
+                # Push usage ke cloud
                 async with AsyncSessionLocal() as db:
                     unsynced = await get_unsynced_transactions(db)
                 if unsynced:
@@ -248,18 +266,18 @@ async def lifespan(app: FastAPI):
                     async with httpx.AsyncClient(timeout=10) as client:
                         r = await client.post(
                             f"{settings.CLOUD_API_URL}/api/sync/transactions",
-                            json={"transactions": payload, "api_key": settings.CLOUD_API_KEY},
+                            json={"transactions": payload, "api_key": cloud_key},
                         )
                     if r.status_code == 200:
                         async with AsyncSessionLocal() as db2:
                             await mark_synced(db2, [t.id for t in unsynced])
                         logger.info("Periodic sync: %d transaksi ter-sync ke cloud", len(unsynced))
 
-                # 2. Pull balance terbaru dari cloud (tangkap top up dari admin)
+                # Pull balance terbaru dari cloud
                 async with httpx.AsyncClient(timeout=10) as client:
                     resp = await client.get(
                         f"{settings.CLOUD_API_URL}/token/balance",
-                        headers={"x-api-key": settings.CLOUD_API_KEY},
+                        headers={"x-api-key": cloud_key},
                     )
                 if resp.status_code == 200:
                     cloud_balance = resp.json().get("balance", 0)
@@ -285,7 +303,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS: izinkan semua origin jika CORS_ORIGINS kosong
 _raw = getattr(settings, "CORS_ORIGINS", "").strip()
 _cors_origins = [o.strip() for o in _raw.split(",") if o.strip()] or ["*"]
 
@@ -302,14 +319,10 @@ app.include_router(router, prefix="/api")
 
 @app.get("/widget.js", tags=["Widget"], include_in_schema=False)
 async def serve_widget_js():
-    """Widget JS yang bisa di-embed langsung di website client."""
     return Response(
         content=_WIDGET_JS,
         media_type="application/javascript",
-        headers={
-            "Cache-Control": "public, max-age=300",
-            "Access-Control-Allow-Origin": "*",
-        },
+        headers={"Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*"},
     )
 
 
@@ -324,9 +337,4 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/", tags=["health"])
 async def root():
-    return {
-        "app": settings.APP_NAME,
-        "version": "1.0.0",
-        "docs": "/docs",
-        "status": "running",
-    }
+    return {"app": settings.APP_NAME, "version": "1.0.0", "docs": "/docs", "status": "running"}

@@ -7,6 +7,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.db.database import Base
 
 
+class AppSettings(Base):
+    """Key-value store untuk konfigurasi aplikasi (mis. cloud_api_key)."""
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class BusinessProfile(Base):
     __tablename__ = "business_profiles"
 
@@ -64,8 +75,8 @@ class ContentLibrary(Base):
     __tablename__ = "content_library"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    platform: Mapped[str] = mapped_column(String(50))  # instagram|tiktok|facebook|whatsapp
-    content_type: Mapped[str] = mapped_column(String(50))  # promo|tips|produk
+    platform: Mapped[str] = mapped_column(String(50))
+    content_type: Mapped[str] = mapped_column(String(50))
     title: Mapped[str] = mapped_column(String(200), default="")
     content: Mapped[str] = mapped_column(Text)
     hashtags: Mapped[str] = mapped_column(Text, default="")
@@ -89,7 +100,7 @@ class TokenLedger(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     action: Mapped[str] = mapped_column(String(100))
-    amount: Mapped[int] = mapped_column(Integer)  # negative = debit, positive = credit
+    amount: Mapped[int] = mapped_column(Integer)
     balance_after: Mapped[int] = mapped_column(Integer)
     reference_id: Mapped[str] = mapped_column(String(200), default="")
     synced: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -102,7 +113,7 @@ class WebChatConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     agent_name: Mapped[str] = mapped_column(String(100), default="AI Assistant")
     greeting: Mapped[str] = mapped_column(
-        Text, default="Halo! Ada yang bisa saya bantu? 😊"
+        Text, default="Halo! Ada yang bisa saya bantu? \U0001f60a"
     )
     theme_color: Mapped[str] = mapped_column(String(20), default="#16a34a")
     system_prompt_extra: Mapped[str] = mapped_column(Text, default="")
@@ -137,6 +148,6 @@ class WebChatMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     session_id: Mapped[str] = mapped_column(String(100), index=True)
-    role: Mapped[str] = mapped_column(String(10))  # "user" | "assistant"
+    role: Mapped[str] = mapped_column(String(10))
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
