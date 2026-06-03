@@ -232,11 +232,16 @@ async def lifespan(app: FastAPI):
         while True:
             await _asyncio.sleep(300)
             try:
-                from backend.modules.token_middleware import get_unsynced_transactions, mark_synced
+                from backend.modules.token_middleware import (
+                    get_unsynced_transactions, mark_synced, get_balance, add_token
+                )
+                if not settings.CLOUD_API_URL or not settings.CLOUD_API_KEY:
+                    continue
+
+                # 1. Push usage ke cloud
                 async with AsyncSessionLocal() as db:
                     unsynced = await get_unsynced_transactions(db)
-                    if not unsynced:
-                        continue
+                if unsynced:
                     payload = [{"id": t.id, "action": t.action, "amount": t.amount,
                                 "balance_after": t.balance_after, "reference_id": t.reference_id,
                                 "created_at": t.created_at.isoformat()} for t in unsynced]
@@ -249,6 +254,21 @@ async def lifespan(app: FastAPI):
                         async with AsyncSessionLocal() as db2:
                             await mark_synced(db2, [t.id for t in unsynced])
                         logger.info("Periodic sync: %d transaksi ter-sync ke cloud", len(unsynced))
+
+                # 2. Pull balance terbaru dari cloud (tangkap top up dari admin)
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{settings.CLOUD_API_URL}/token/balance",
+                        headers={"x-api-key": settings.CLOUD_API_KEY},
+                    )
+                if resp.status_code == 200:
+                    cloud_balance = resp.json().get("balance", 0)
+                    async with AsyncSessionLocal() as db:
+                        local = await get_balance(db)
+                        diff = cloud_balance - local["balance"]
+                        if diff > 0:
+                            await add_token(db, diff, action="sync_from_cloud")
+                            logger.info("Token top up dari cloud: +%d, balance=%d", diff, cloud_balance)
             except Exception as e:
                 logger.debug("Periodic sync error (non-fatal): %s", e)
 
