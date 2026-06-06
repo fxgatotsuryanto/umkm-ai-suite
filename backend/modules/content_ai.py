@@ -37,11 +37,9 @@ CONTENT_TYPE_DESC = {
 
 
 def _parse_json_safe(raw: str) -> dict:
-    """Parse JSON dari response model, toleran terhadap code fence markdown."""
     text = raw.strip()
     if "```" in text:
         parts = text.split("```")
-        # ambil bagian dalam fence pertama
         text = parts[1]
         if text.startswith("json"):
             text = text[4:]
@@ -55,6 +53,7 @@ async def generate_content(
     content_type: str,
     topic: str = "",
     product_id: int | None = None,
+    license_key: str = "",
 ) -> dict:
     platform = platform.strip()
     content_type = content_type.strip()
@@ -65,7 +64,7 @@ async def generate_content(
     if not content_type:
         return {"success": False, "content": None, "error": "Jenis konten tidak boleh kosong."}
 
-    token_ok = await deduct_token(db, "content_generate")
+    token_ok = await deduct_token(db, "content_generate", license_key=license_key)
     if not token_ok:
         return {
             "success": False,
@@ -73,14 +72,21 @@ async def generate_content(
             "error": "Saldo token tidak cukup. Butuh 5 token.",
         }
 
-    profile_result = await db.execute(select(BusinessProfile).limit(1))
+    profile_result = await db.execute(
+        select(BusinessProfile)
+        .where(BusinessProfile.license_key == license_key)
+        .limit(1)
+    )
     profile = profile_result.scalar_one_or_none()
     business_name = (profile.name if profile else settings.BUSINESS_NAME).strip() or "Toko Kami"
 
     product_info = ""
     if product_id:
         product_result = await db.execute(
-            select(Product).where(Product.id == product_id)
+            select(Product).where(
+                Product.id == product_id,
+                Product.license_key == license_key,
+            )
         )
         product = product_result.scalar_one_or_none()
         if product:
@@ -115,7 +121,7 @@ async def generate_content(
     )
 
     if not prompt.strip():
-        await refund_token(db, "content_generate")
+        await refund_token(db, "content_generate", license_key=license_key)
         return {"success": False, "content": None, "error": "Gagal membangun prompt konten."}
 
     try:
@@ -126,7 +132,7 @@ async def generate_content(
             temperature=0.8,
         )
     except APIConnectionError as e:
-        await refund_token(db, "content_generate")
+        await refund_token(db, "content_generate", license_key=license_key)
         logger.error("OpenRouter connection error: %s", e)
         return {
             "success": False,
@@ -134,7 +140,7 @@ async def generate_content(
             "error": f"Tidak dapat terhubung ke AI provider: {str(e)}",
         }
     except APIStatusError as e:
-        await refund_token(db, "content_generate")
+        await refund_token(db, "content_generate", license_key=license_key)
         logger.error("OpenRouter API error %s: %s", e.status_code, e.message)
         return {
             "success": False,
@@ -142,7 +148,7 @@ async def generate_content(
             "error": f"AI provider error ({e.status_code}): {e.message}",
         }
     except Exception as e:
-        await refund_token(db, "content_generate")
+        await refund_token(db, "content_generate", license_key=license_key)
         logger.exception("Unexpected error calling AI provider")
         return {
             "success": False,
@@ -154,11 +160,11 @@ async def generate_content(
     try:
         result = _parse_json_safe(raw)
     except (json.JSONDecodeError, IndexError):
-        # Model tidak mengembalikan JSON valid — simpan raw sebagai content
         logger.warning("Model returned non-JSON, storing raw content")
         result = {"title": "", "content": raw, "hashtags": "", "cta": ""}
 
     record = ContentLibrary(
+        license_key=license_key,
         platform=platform,
         content_type=content_type,
         title=result.get("title", ""),

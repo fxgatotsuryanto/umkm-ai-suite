@@ -1,5 +1,6 @@
 import csv
 import io
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -37,6 +38,50 @@ from backend.modules.webchat import handle_webchat
 
 router = APIRouter()
 
+# ── Auth cache ────────────────────────────────────────────────────────────────
+
+_license_cache: dict[str, tuple[dict, float]] = {}
+_CACHE_TTL = 300  # 5 minutes
+
+
+async def _validate_license(key: str) -> Optional[dict]:
+    now = time.time()
+    if key in _license_cache:
+        data, ts = _license_cache[key]
+        if now - ts < _CACHE_TTL:
+            return data
+
+    # Fast path: key matches local env config
+    if settings.CLOUD_API_KEY and key == settings.CLOUD_API_KEY:
+        data = {"business_name": settings.BUSINESS_NAME}
+        _license_cache[key] = (data, now)
+        return data
+
+    # Validate against cloud
+    cloud_url = settings.CLOUD_API_URL.rstrip("/")
+    if cloud_url:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.get(
+                    f"{cloud_url}/license/validate",
+                    headers={"x-api-key": key},
+                )
+            if r.status_code == 200:
+                data = r.json()
+                _license_cache[key] = (data, now)
+                return data
+        except Exception:
+            pass
+
+    return None
+
+
+async def get_license_key(x_api_key: str = Header(...)) -> str:
+    info = await _validate_license(x_api_key)
+    if not info:
+        raise HTTPException(status_code=401, detail="License key tidak valid atau expired")
+    return x_api_key
+
 
 # ── Pydantic Schemas ──────────────────────────────────────────────────────────
 
@@ -48,8 +93,8 @@ class WAReplyRequest(BaseModel):
 
 
 class ContentRequest(BaseModel):
-    platform: str  # instagram | tiktok | facebook | whatsapp
-    content_type: str  # promo | tips | produk | behind_the_scenes | testimoni
+    platform: str
+    content_type: str
     topic: str = ""
     product_id: Optional[int] = None
 
@@ -89,12 +134,10 @@ async def login(req: LoginRequest):
     if not key:
         raise HTTPException(status_code=400, detail="License key tidak boleh kosong")
 
-    # Validasi lokal: cocokkan dengan CLOUD_API_KEY yang di-set di env
     if settings.CLOUD_API_KEY and key == settings.CLOUD_API_KEY:
         return {"success": True, "business_name": settings.BUSINESS_NAME}
 
-    # Validasi via cloud server jika CLOUD_API_URL di-set
-    if settings.CLOUD_API_URL and settings.CLOUD_API_URL != "https://your-cloud.railway.app":
+    if settings.CLOUD_API_URL:
         try:
             async with httpx.AsyncClient(timeout=8) as client:
                 r = await client.get(
@@ -103,9 +146,6 @@ async def login(req: LoginRequest):
                 )
             if r.status_code == 200:
                 data = r.json()
-                # Simpan key sebagai CLOUD_API_KEY runtime jika belum di-set
-                if not settings.CLOUD_API_KEY:
-                    settings.CLOUD_API_KEY = key
                 return {
                     "success": True,
                     "business_name": data.get("business_name", settings.BUSINESS_NAME),
@@ -119,30 +159,32 @@ async def login(req: LoginRequest):
 
 
 @router.get("/auth/me", tags=["Auth"])
-async def auth_me():
-    """Cek apakah backend sudah terkonfigurasi dengan license key."""
-    has_key = bool(settings.CLOUD_API_KEY)
+async def auth_me(license_key: str = Depends(get_license_key)):
     return {
-        "configured": has_key,
+        "configured": True,
         "business_name": settings.BUSINESS_NAME,
-        "cloud_url": settings.CLOUD_API_URL if has_key else None,
+        "license_key": license_key[:8] + "****",
     }
 
 
 # ── WA Auto-Reply ─────────────────────────────────────────────────────────────
 
 @router.post("/wa/reply", tags=["WhatsApp"])
-async def wa_reply(req: WAReplyRequest, db: AsyncSession = Depends(get_db)):
+async def wa_reply(
+    req: WAReplyRequest,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
     if settings.N8N_WEBHOOK_SECRET and req.webhook_secret != settings.N8N_WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="Webhook secret tidak valid")
 
-    result = await generate_wa_reply(
+    return await generate_wa_reply(
         db=db,
         wa_number=req.wa_number,
         message=req.message,
         customer_name=req.customer_name,
+        license_key=license_key,
     )
-    return result
 
 
 @router.get("/wa/chats", tags=["WhatsApp"])
@@ -150,8 +192,14 @@ async def list_chats(
     limit: int = 50,
     wa_number: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
-    query = select(ChatHistory).order_by(desc(ChatHistory.created_at)).limit(limit)
+    query = (
+        select(ChatHistory)
+        .where(ChatHistory.license_key == license_key)
+        .order_by(desc(ChatHistory.created_at))
+        .limit(limit)
+    )
     if wa_number:
         query = query.where(ChatHistory.wa_number == wa_number)
     result = await db.execute(query)
@@ -173,7 +221,11 @@ async def list_chats(
 # ── Content Marketing ─────────────────────────────────────────────────────────
 
 @router.post("/content/generate", tags=["Content"])
-async def content_generate(req: ContentRequest, db: AsyncSession = Depends(get_db)):
+async def content_generate(
+    req: ContentRequest,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
     valid_platforms = {"instagram", "tiktok", "facebook", "whatsapp"}
     if req.platform not in valid_platforms:
         raise HTTPException(
@@ -186,6 +238,7 @@ async def content_generate(req: ContentRequest, db: AsyncSession = Depends(get_d
         content_type=req.content_type,
         topic=req.topic,
         product_id=req.product_id,
+        license_key=license_key,
     )
 
 
@@ -195,8 +248,14 @@ async def content_library(
     content_type: Optional[str] = None,
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
-    query = select(ContentLibrary).order_by(desc(ContentLibrary.created_at)).limit(limit)
+    query = (
+        select(ContentLibrary)
+        .where(ContentLibrary.license_key == license_key)
+        .order_by(desc(ContentLibrary.created_at))
+        .limit(limit)
+    )
     if platform:
         query = query.where(ContentLibrary.platform == platform)
     if content_type:
@@ -222,18 +281,22 @@ async def content_library(
 # ── Token ─────────────────────────────────────────────────────────────────────
 
 @router.get("/token/balance", tags=["Token"])
-async def token_balance(db: AsyncSession = Depends(get_db)):
-    """Kembalikan saldo lokal; otomatis sync dari cloud jika sudah > 5 menit."""
-    await sync_balance_from_cloud(db)
-    return await get_balance(db)
+async def token_balance(
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    await sync_balance_from_cloud(db, license_key=license_key)
+    return await get_balance(db, license_key)
 
 
 @router.post("/token/sync-cloud", tags=["Token"])
-async def token_sync_cloud(db: AsyncSession = Depends(get_db)):
-    """Paksa sync dua arah: push transaksi lokal ke cloud, lalu pull saldo terbaru."""
-    pushed = await push_unsynced_to_cloud(db)
-    cloud_data = await sync_balance_from_cloud(db, force=True)
-    local = await get_balance(db)
+async def token_sync_cloud(
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    pushed = await push_unsynced_to_cloud(db, license_key)
+    cloud_data = await sync_balance_from_cloud(db, force=True, license_key=license_key)
+    local = await get_balance(db, license_key)
     return {
         "pushed": pushed,
         "balance": local["balance"],
@@ -245,11 +308,13 @@ async def token_sync_cloud(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/token/sync-offline", tags=["Token"])
-async def token_sync_offline(db: AsyncSession = Depends(get_db)):
-    """Push transaksi belum tersinkron ke cloud (backward-compat)."""
-    pushed = await push_unsynced_to_cloud(db)
+async def token_sync_offline(
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    pushed = await push_unsynced_to_cloud(db, license_key)
     if pushed == 0:
-        unsynced = await get_unsynced_transactions(db)
+        unsynced = await get_unsynced_transactions(db, license_key)
         if not unsynced:
             return {"synced": 0, "message": "Tidak ada transaksi yang perlu disinkronkan"}
         return {"synced": 0, "message": "Gagal terhubung ke cloud"}
@@ -260,9 +325,15 @@ async def token_sync_offline(db: AsyncSession = Depends(get_db)):
 
 @router.get("/products", tags=["Products"])
 async def list_products(
-    active_only: bool = True, db: AsyncSession = Depends(get_db)
+    active_only: bool = True,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
-    query = select(Product).order_by(Product.name)
+    query = (
+        select(Product)
+        .where(Product.license_key == license_key)
+        .order_by(Product.name)
+    )
     if active_only:
         query = query.where(Product.is_active == True)  # noqa: E712
     result = await db.execute(query)
@@ -283,8 +354,13 @@ async def list_products(
 
 
 @router.post("/products", tags=["Products"])
-async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)):
+async def create_product(
+    data: ProductCreate,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
     product = Product(
+        license_key=license_key,
         name=data.name,
         description=data.description,
         price=data.price,
@@ -298,8 +374,14 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.delete("/products/{product_id}", tags=["Products"])
-async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Product).where(Product.id == product_id))
+async def delete_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    result = await db.execute(
+        select(Product).where(Product.id == product_id, Product.license_key == license_key)
+    )
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
@@ -312,9 +394,15 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/faqs", tags=["FAQ"])
 async def list_faqs(
-    category: Optional[str] = None, db: AsyncSession = Depends(get_db)
+    category: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
-    query = select(FAQ).where(FAQ.is_active == True).order_by(FAQ.category)  # noqa: E712
+    query = (
+        select(FAQ)
+        .where(FAQ.is_active == True, FAQ.license_key == license_key)  # noqa: E712
+        .order_by(FAQ.category)
+    )
     if category:
         query = query.where(FAQ.category == category)
     result = await db.execute(query)
@@ -332,8 +420,17 @@ async def list_faqs(
 
 
 @router.post("/faqs", tags=["FAQ"])
-async def create_faq(data: FAQCreate, db: AsyncSession = Depends(get_db)):
-    faq = FAQ(question=data.question, answer=data.answer, category=data.category)
+async def create_faq(
+    data: FAQCreate,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    faq = FAQ(
+        license_key=license_key,
+        question=data.question,
+        answer=data.answer,
+        category=data.category,
+    )
     db.add(faq)
     await db.commit()
     await db.refresh(faq)
@@ -341,8 +438,14 @@ async def create_faq(data: FAQCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/faqs/{faq_id}", tags=["FAQ"])
-async def delete_faq(faq_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FAQ).where(FAQ.id == faq_id))
+async def delete_faq(
+    faq_id: int,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    result = await db.execute(
+        select(FAQ).where(FAQ.id == faq_id, FAQ.license_key == license_key)
+    )
     faq = result.scalar_one_or_none()
     if not faq:
         raise HTTPException(status_code=404, detail="FAQ tidak ditemukan")
@@ -354,8 +457,15 @@ async def delete_faq(faq_id: int, db: AsyncSession = Depends(get_db)):
 # ── Business Profile ──────────────────────────────────────────────────────────
 
 @router.get("/profile", tags=["Profile"])
-async def get_profile(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BusinessProfile).limit(1))
+async def get_profile(
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    result = await db.execute(
+        select(BusinessProfile)
+        .where(BusinessProfile.license_key == license_key)
+        .limit(1)
+    )
     profile = result.scalar_one_or_none()
     if not profile:
         return {"message": "Profil belum diatur", "profile": None}
@@ -372,11 +482,19 @@ async def get_profile(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/profile", tags=["Profile"])
-async def update_profile(data: ProfileUpdate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BusinessProfile).limit(1))
+async def update_profile(
+    data: ProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    result = await db.execute(
+        select(BusinessProfile)
+        .where(BusinessProfile.license_key == license_key)
+        .limit(1)
+    )
     profile = result.scalar_one_or_none()
     if not profile:
-        profile = BusinessProfile()
+        profile = BusinessProfile(license_key=license_key)
         db.add(profile)
 
     for field, value in data.model_dump(exclude_none=True).items():
@@ -392,11 +510,18 @@ async def update_profile(data: ProfileUpdate, db: AsyncSession = Depends(get_db)
 class WebChatRequest(BaseModel):
     session_id: str
     message: str
+    business_key: str = ""  # public widget sends business_key instead of x-api-key
 
 
 @router.post("/webchat/message", tags=["WebChat"])
-async def webchat_message(req: WebChatRequest, db: AsyncSession = Depends(get_db)):
-    return await handle_webchat(db, req.session_id, req.message)
+async def webchat_message(
+    req: WebChatRequest,
+    db: AsyncSession = Depends(get_db),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    # Widget visitors don't have a license key; use business_key from body or header
+    effective_key = req.business_key or x_api_key or ""
+    return await handle_webchat(db, req.session_id, req.message, effective_key)
 
 
 @router.get("/webchat/history/{session_id}", tags=["WebChat"])
@@ -404,6 +529,7 @@ async def webchat_history(
     session_id: str,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
     res = await db.execute(
         select(WebChatMessage)
@@ -428,9 +554,11 @@ async def webchat_leads(
     limit: int = 50,
     captured_only: bool = True,
     db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
     query = (
         select(WebChatSession)
+        .where(WebChatSession.license_key == license_key)
         .order_by(desc(WebChatSession.last_active))
         .limit(limit)
     )
@@ -455,19 +583,34 @@ async def webchat_leads(
 
 
 @router.get("/webchat/widget-config", tags=["WebChat"])
-async def webchat_widget_config(db: AsyncSession = Depends(get_db)):
-    cfg_res = await db.execute(select(WebChatConfig).limit(1))
+async def webchat_widget_config(
+    business_key: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    # Public endpoint — widget uses business_key query param or x-api-key header
+    effective_key = business_key or x_api_key or ""
+    cfg_res = await db.execute(
+        select(WebChatConfig)
+        .where(WebChatConfig.license_key == effective_key)
+        .limit(1)
+    )
     cfg = cfg_res.scalar_one_or_none()
-    profile_res = await db.execute(select(BusinessProfile).limit(1))
+    profile_res = await db.execute(
+        select(BusinessProfile)
+        .where(BusinessProfile.license_key == effective_key)
+        .limit(1)
+    )
     profile = profile_res.scalar_one_or_none()
     return {
         "business_name": (
-            profile.name if profile and profile.name else (cfg.agent_name if cfg else "AI Assistant")
+            profile.name if profile and profile.name
+            else (cfg.agent_name if cfg else "AI Assistant")
         ),
-        "agent_name":   cfg.agent_name   if cfg else "AI Assistant",
-        "greeting":     cfg.greeting     if cfg else "Halo! Ada yang bisa saya bantu? 😊",
-        "theme_color":  cfg.theme_color  if cfg else "#16a34a",
-        "auto_open":    cfg.auto_open    if cfg else False,
+        "agent_name":    cfg.agent_name   if cfg else "AI Assistant",
+        "greeting":      cfg.greeting     if cfg else "Halo! Ada yang bisa saya bantu? \U0001f60a",
+        "theme_color":   cfg.theme_color  if cfg else "#16a34a",
+        "auto_open":     cfg.auto_open    if cfg else False,
         "cta_wa_number": cfg.cta_wa_number if cfg else "",
     }
 
@@ -486,11 +629,18 @@ class WebChatConfigUpdate(BaseModel):
 
 
 @router.get("/webchat/config", tags=["WebChat"])
-async def get_webchat_config(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(WebChatConfig).limit(1))
+async def get_webchat_config(
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
+    res = await db.execute(
+        select(WebChatConfig)
+        .where(WebChatConfig.license_key == license_key)
+        .limit(1)
+    )
     cfg = res.scalar_one_or_none()
     if not cfg:
-        cfg = WebChatConfig()
+        cfg = WebChatConfig(license_key=license_key)
         db.add(cfg)
         await db.commit()
         await db.refresh(cfg)
@@ -509,12 +659,18 @@ async def get_webchat_config(db: AsyncSession = Depends(get_db)):
 
 @router.put("/webchat/config", tags=["WebChat"])
 async def update_webchat_config(
-    data: WebChatConfigUpdate, db: AsyncSession = Depends(get_db)
+    data: WebChatConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
-    res = await db.execute(select(WebChatConfig).limit(1))
+    res = await db.execute(
+        select(WebChatConfig)
+        .where(WebChatConfig.license_key == license_key)
+        .limit(1)
+    )
     cfg = res.scalar_one_or_none()
     if not cfg:
-        cfg = WebChatConfig()
+        cfg = WebChatConfig(license_key=license_key)
         db.add(cfg)
 
     for field, value in data.model_dump(exclude_none=True).items():
@@ -531,8 +687,13 @@ async def update_webchat_config(
 async def export_webchat_leads(
     captured_only: bool = True,
     db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
 ):
-    query = select(WebChatSession).order_by(desc(WebChatSession.last_active))
+    query = (
+        select(WebChatSession)
+        .where(WebChatSession.license_key == license_key)
+        .order_by(desc(WebChatSession.last_active))
+    )
     if captured_only:
         query = query.where(WebChatSession.lead_captured == True)  # noqa: E712
     res = await db.execute(query)
@@ -564,73 +725,91 @@ async def export_webchat_leads(
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @router.get("/stats", tags=["Stats"])
-async def get_stats(db: AsyncSession = Depends(get_db)):
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+    license_key: str = Depends(get_license_key),
+):
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_start  = today_start - timedelta(days=today_start.weekday())
 
-    # WA chats
-    wa_today_res  = await db.execute(
-        select(func.count(ChatHistory.id)).where(ChatHistory.created_at >= today_start)
+    wa_today_res = await db.execute(
+        select(func.count(ChatHistory.id)).where(
+            ChatHistory.license_key == license_key,
+            ChatHistory.created_at >= today_start,
+        )
     )
-    wa_total_res  = await db.execute(select(func.count(ChatHistory.id)))
-
-    # WebChat sessions
-    wc_today_res  = await db.execute(
-        select(func.count(WebChatSession.id)).where(WebChatSession.created_at >= today_start)
+    wa_total_res = await db.execute(
+        select(func.count(ChatHistory.id)).where(ChatHistory.license_key == license_key)
     )
-    wc_total_res  = await db.execute(select(func.count(WebChatSession.id)))
 
-    # WebChat leads
+    wc_today_res = await db.execute(
+        select(func.count(WebChatSession.id)).where(
+            WebChatSession.license_key == license_key,
+            WebChatSession.created_at >= today_start,
+        )
+    )
+    wc_total_res = await db.execute(
+        select(func.count(WebChatSession.id)).where(
+            WebChatSession.license_key == license_key
+        )
+    )
+
     leads_today_res = await db.execute(
         select(func.count(WebChatSession.id)).where(
+            WebChatSession.license_key == license_key,
             WebChatSession.lead_captured == True,  # noqa: E712
             WebChatSession.created_at >= today_start,
         )
     )
     leads_total_res = await db.execute(
         select(func.count(WebChatSession.id)).where(
-            WebChatSession.lead_captured == True  # noqa: E712
+            WebChatSession.license_key == license_key,
+            WebChatSession.lead_captured == True,  # noqa: E712
         )
     )
 
-    # Content
     content_today_res = await db.execute(
-        select(func.count(ContentLibrary.id)).where(ContentLibrary.created_at >= today_start)
+        select(func.count(ContentLibrary.id)).where(
+            ContentLibrary.license_key == license_key,
+            ContentLibrary.created_at >= today_start,
+        )
     )
-    content_total_res = await db.execute(select(func.count(ContentLibrary.id)))
+    content_total_res = await db.execute(
+        select(func.count(ContentLibrary.id)).where(
+            ContentLibrary.license_key == license_key
+        )
+    )
 
-    # Tokens used today (debit entries from ledger)
     tokens_today_res = await db.execute(
         select(func.sum(TokenLedger.amount)).where(
+            TokenLedger.license_key == license_key,
             TokenLedger.amount < 0,
             TokenLedger.created_at >= today_start,
         )
     )
     tokens_week_res = await db.execute(
         select(func.sum(TokenLedger.amount)).where(
+            TokenLedger.license_key == license_key,
             TokenLedger.amount < 0,
             TokenLedger.created_at >= week_start,
         )
     )
 
-    tokens_today = abs(tokens_today_res.scalar() or 0)
-    tokens_week  = abs(tokens_week_res.scalar()  or 0)
-
     return {
         "today": {
-            "wa_chats":         wa_today_res.scalar() or 0,
-            "webchat_sessions": wc_today_res.scalar() or 0,
-            "webchat_leads":    leads_today_res.scalar() or 0,
+            "wa_chats":          wa_today_res.scalar() or 0,
+            "webchat_sessions":  wc_today_res.scalar() or 0,
+            "webchat_leads":     leads_today_res.scalar() or 0,
             "content_generated": content_today_res.scalar() or 0,
-            "tokens_used":      tokens_today,
+            "tokens_used":       abs(tokens_today_res.scalar() or 0),
         },
         "week": {
-            "tokens_used": tokens_week,
+            "tokens_used": abs(tokens_week_res.scalar() or 0),
         },
         "total": {
-            "wa_chats":         wa_total_res.scalar() or 0,
-            "webchat_sessions": wc_total_res.scalar() or 0,
-            "webchat_leads":    leads_total_res.scalar() or 0,
+            "wa_chats":          wa_total_res.scalar() or 0,
+            "webchat_sessions":  wc_total_res.scalar() or 0,
+            "webchat_leads":     leads_total_res.scalar() or 0,
             "content_generated": content_total_res.scalar() or 0,
         },
     }

@@ -20,17 +20,27 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def _build_context(db: AsyncSession) -> str:
-    profile_result = await db.execute(select(BusinessProfile).limit(1))
+async def _build_context(db: AsyncSession, license_key: str = "") -> str:
+    profile_result = await db.execute(
+        select(BusinessProfile)
+        .where(BusinessProfile.license_key == license_key)
+        .limit(1)
+    )
     profile = profile_result.scalar_one_or_none()
 
     products_result = await db.execute(
-        select(Product).where(Product.is_active == True).limit(20)  # noqa: E712
+        select(Product).where(
+            Product.is_active == True,  # noqa: E712
+            Product.license_key == license_key,
+        ).limit(20)
     )
     products = products_result.scalars().all()
 
     faqs_result = await db.execute(
-        select(FAQ).where(FAQ.is_active == True).limit(30)  # noqa: E712
+        select(FAQ).where(
+            FAQ.is_active == True,  # noqa: E712
+            FAQ.license_key == license_key,
+        ).limit(30)
     )
     faqs = faqs_result.scalars().all()
 
@@ -58,6 +68,7 @@ async def generate_wa_reply(
     wa_number: str,
     message: str,
     customer_name: str = "",
+    license_key: str = "",
 ) -> dict:
     message = message.strip()
     if not message:
@@ -68,7 +79,9 @@ async def generate_wa_reply(
             "error": "Pesan masuk kosong atau hanya spasi.",
         }
 
-    token_ok = await deduct_token(db, "wa_reply", reference_id=wa_number)
+    token_ok = await deduct_token(
+        db, "wa_reply", reference_id=wa_number, license_key=license_key
+    )
     if not token_ok:
         return {
             "success": False,
@@ -76,7 +89,7 @@ async def generate_wa_reply(
             "tokens_used": 0,
         }
 
-    context = await _build_context(db)
+    context = await _build_context(db, license_key)
 
     system_prompt = f"""Kamu adalah asisten WhatsApp untuk sebuah UMKM. Jawab pertanyaan pelanggan dengan ramah, singkat, dan informatif dalam Bahasa Indonesia.
 
@@ -102,7 +115,7 @@ Aturan:
             temperature=0.7,
         )
     except APIConnectionError as e:
-        await refund_token(db, "wa_reply", reference_id=wa_number)
+        await refund_token(db, "wa_reply", reference_id=wa_number, license_key=license_key)
         logger.error("OpenRouter connection error: %s", e)
         return {
             "success": False,
@@ -111,7 +124,7 @@ Aturan:
             "error": str(e),
         }
     except APIStatusError as e:
-        await refund_token(db, "wa_reply", reference_id=wa_number)
+        await refund_token(db, "wa_reply", reference_id=wa_number, license_key=license_key)
         logger.error("OpenRouter API error %s: %s", e.status_code, e.message)
         return {
             "success": False,
@@ -120,7 +133,7 @@ Aturan:
             "error": f"{e.status_code}: {e.message}",
         }
     except Exception as e:
-        await refund_token(db, "wa_reply", reference_id=wa_number)
+        await refund_token(db, "wa_reply", reference_id=wa_number, license_key=license_key)
         logger.exception("Unexpected error calling AI provider")
         return {
             "success": False,
@@ -132,6 +145,7 @@ Aturan:
     reply = response.choices[0].message.content
 
     chat = ChatHistory(
+        license_key=license_key,
         wa_number=wa_number,
         customer_name=customer_name,
         message_in=message,

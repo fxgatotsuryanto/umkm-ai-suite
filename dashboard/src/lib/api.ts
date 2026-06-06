@@ -1,5 +1,10 @@
 const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:8000';
 
+function getLicenseKey(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem('umkm_license') ?? '';
+}
+
 async function call<T = unknown>(
   path: string,
   options: RequestInit & { params?: Record<string, string | number | boolean | undefined> } = {},
@@ -16,9 +21,14 @@ async function call<T = unknown>(
     ).toString();
     if (qs) url += `?${qs}`;
   }
+  const licenseKey = getLicenseKey();
   const res = await fetch(url, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(licenseKey ? { 'x-api-key': licenseKey } : {}),
+      ...init.headers,
+    },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -205,3 +215,17 @@ export const api = {
 };
 
 export const BACKEND_URL = BASE_URL;
+
+// ── Auth helper ───────────────────────────────────────────────────────────────
+
+export function saveLicenseKey(key: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('umkm_license', key);
+  }
+}
+
+export function clearLicenseKey(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('umkm_license');
+  }
+}

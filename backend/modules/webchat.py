@@ -31,27 +31,41 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def _get_config(db: AsyncSession) -> WebChatConfig:
-    res = await db.execute(select(WebChatConfig).limit(1))
+async def _get_config(db: AsyncSession, license_key: str = "") -> WebChatConfig:
+    res = await db.execute(
+        select(WebChatConfig)
+        .where(WebChatConfig.license_key == license_key)
+        .limit(1)
+    )
     config = res.scalar_one_or_none()
     if not config:
-        config = WebChatConfig()
+        config = WebChatConfig(license_key=license_key)
         db.add(config)
         await db.flush()
     return config
 
 
-async def _build_context(db: AsyncSession) -> str:
-    profile_res = await db.execute(select(BusinessProfile).limit(1))
+async def _build_context(db: AsyncSession, license_key: str = "") -> str:
+    profile_res = await db.execute(
+        select(BusinessProfile)
+        .where(BusinessProfile.license_key == license_key)
+        .limit(1)
+    )
     profile = profile_res.scalar_one_or_none()
 
     products_res = await db.execute(
-        select(Product).where(Product.is_active == True).limit(20)  # noqa: E712
+        select(Product).where(
+            Product.is_active == True,  # noqa: E712
+            Product.license_key == license_key,
+        ).limit(20)
     )
     products = products_res.scalars().all()
 
     faqs_res = await db.execute(
-        select(FAQ).where(FAQ.is_active == True).limit(30)  # noqa: E712
+        select(FAQ).where(
+            FAQ.is_active == True,  # noqa: E712
+            FAQ.license_key == license_key,
+        ).limit(30)
     )
     faqs = faqs_res.scalars().all()
 
@@ -79,19 +93,23 @@ async def _build_context(db: AsyncSession) -> str:
     return "\n".join(parts) if parts else "Tidak ada informasi bisnis tersedia."
 
 
-async def _get_or_create_session(db: AsyncSession, session_id: str) -> WebChatSession:
+async def _get_or_create_session(
+    db: AsyncSession, session_id: str, license_key: str = ""
+) -> WebChatSession:
     res = await db.execute(
         select(WebChatSession).where(WebChatSession.session_id == session_id)
     )
     session = res.scalar_one_or_none()
     if not session:
-        session = WebChatSession(session_id=session_id)
+        session = WebChatSession(session_id=session_id, license_key=license_key)
         db.add(session)
         await db.flush()
     return session
 
 
-async def _get_history(db: AsyncSession, session_id: str, window: int = 20) -> list[dict]:
+async def _get_history(
+    db: AsyncSession, session_id: str, window: int = 20
+) -> list[dict]:
     res = await db.execute(
         select(WebChatMessage)
         .where(WebChatMessage.session_id == session_id)
@@ -114,7 +132,7 @@ def _extract_lead(text: str) -> dict:
 
 async def _notify_lead(config: WebChatConfig, session: WebChatSession) -> None:
     text = (
-        f"🔔 *Lead Baru — WebChat*\n\n"
+        f"\U0001f514 *Lead Baru — WebChat*\n\n"
         f"*Nama:* {session.visitor_name or '—'}\n"
         f"*WA:* {session.visitor_wa or '—'}\n"
         f"*Kebutuhan:* {session.kebutuhan or '—'}\n"
@@ -145,29 +163,26 @@ async def handle_webchat(
     db: AsyncSession,
     session_id: str,
     message: str,
+    license_key: str = "",
 ) -> dict:
     message = message.strip()
     if not message:
         return {"success": False, "reply": "Pesan tidak boleh kosong.",
                 "session_id": session_id, "tokens_used": 0}
 
-    # ── FASE 1: Ambil semua data dari DB, commit, tutup session ───────────────
-    # Penting: session DB HARUS ditutup sebelum await ke OpenAI.
-    # Jika tidak, event loop context-switch saat await OpenAI bisa menyebabkan
-    # konflik state pada SQLAlchemy session (IllegalStateChangeError).
+    # ── FASE 1: Ambil semua data dari DB, commit, tutup session ──────────────
+    config        = await _get_config(db, license_key)
+    wchat_session = await _get_or_create_session(db, session_id, license_key)
+    history       = await _get_history(db, session_id)
+    context       = await _build_context(db, license_key)
+    token_ok      = await deduct_token(
+        db, "webchat", reference_id=session_id, license_key=license_key
+    )
 
-    config       = await _get_config(db)
-    wchat_session = await _get_or_create_session(db, session_id)
-    history      = await _get_history(db, session_id)
-    context      = await _build_context(db)
-    token_ok     = await deduct_token(db, "webchat", reference_id=session_id)
-
-    # Snapshot data yang dibutuhkan setelah session ditutup
-    cta_wa_number    = config.cta_wa_number or ""
+    cta_wa_number       = config.cta_wa_number or ""
     system_prompt_extra = config.system_prompt_extra or ""
-    lead_captured    = wchat_session.lead_captured
+    lead_captured       = wchat_session.lead_captured
 
-    # Commit semua perubahan SEBELUM panggil OpenAI (get_db() akan close otomatis setelah return)
     await db.commit()
 
     if not token_ok:
@@ -178,7 +193,7 @@ async def handle_webchat(
             "tokens_used": 0,
         }
 
-    # ── FASE 2: Bangun prompt & panggil OpenAI (tanpa DB session aktif) ───────
+    # ── FASE 2: Bangun prompt & panggil OpenAI ──────────────────────────────
     business_name = context.split("\n")[0].replace("Nama Bisnis: ", "") if context else "kami"
     cta_wa = f"\nJika pelanggan siap, arahkan ke WhatsApp: wa.me/{cta_wa_number}" if cta_wa_number else ""
     extra  = f"\n{system_prompt_extra}" if system_prompt_extra.strip() else ""
@@ -238,12 +253,12 @@ ATURAN:
 
     reply = response.choices[0].message.content
 
-    # ── FASE 3: Simpan hasil ke DB dengan session BARU ────────────────────────
+    # ── FASE 3: Simpan hasil ke DB dengan session BARU ───────────────────────
     lead = _extract_lead(reply)
     just_captured = False
 
     async with AsyncSessionLocal() as new_db:
-        new_db.add(WebChatMessage(session_id=session_id, role="user",    content=message))
+        new_db.add(WebChatMessage(session_id=session_id, role="user",      content=message))
         new_db.add(WebChatMessage(session_id=session_id, role="assistant", content=reply))
 
         if lead and not lead_captured:
@@ -263,8 +278,12 @@ ATURAN:
         await new_db.commit()
 
         if just_captured:
-            # Re-load config untuk notifikasi
-            cfg_res = await new_db.execute(sa_select(WebChatConfig).limit(1))
+            from sqlalchemy import select as sa_select
+            cfg_res = await new_db.execute(
+                sa_select(WebChatConfig)
+                .where(WebChatConfig.license_key == license_key)
+                .limit(1)
+            )
             cfg = cfg_res.scalar_one_or_none()
             wcs_res = await new_db.execute(
                 sa_select(WebChatSession).where(WebChatSession.session_id == session_id)
