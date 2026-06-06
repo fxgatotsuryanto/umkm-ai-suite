@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENAI_MODEL: str = "openai/gpt-4o-mini"
 
-    CLOUD_API_URL: str = "https://your-cloud.railway.app"
+    # Cloud backend untuk validasi lisensi & sinkronisasi token
+    CLOUD_API_URL: str = "https://umkm-backend.aimarketingstrategic.com"
     CLOUD_API_KEY: str = ""
 
     CORS_ORIGINS: str = ""  # comma-separated, e.g. "http://localhost:3000,https://app.example.com" — empty = allow all
@@ -29,4 +30,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

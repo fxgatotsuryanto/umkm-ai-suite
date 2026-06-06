@@ -247,7 +247,8 @@
   │  1. Copy semua kode antara <div id="umkm-chat-widget"> dan      │
   │     penutupnya beserta <script> di bawah                        │
   │  2. Paste sebelum </body> di halaman website client             │
-  │  3. Ganti BACKEND_URL dengan URL backend UMKM AI Suite          │
+  │  3. Ganti BACKEND_URL dengan URL Suite Backend UMKM AI Suite    │
+  │     (bukan cloud backend — yang menangani AI & webchat)         │
   │                                                                 │
   │  Atau gunakan iframe dari n8n chat trigger:                     │
   │  <iframe src="https://n8n.anda.com/webhook/WEBHOOK_ID/chat"     │
@@ -301,7 +302,7 @@
 <script>
 (function () {
   // ── KONFIGURASI — GANTI SESUAI KEBUTUHAN ──────────────────────────
-  var BACKEND_URL  = "https://umkm-backend.aimarketingstrategic.com"; // URL backend UMKM AI Suite
+  var BACKEND_URL  = "http://localhost:8000";          // URL Suite Backend (bukan cloud)
   var THEME_COLOR  = "#16a34a";                        // Warna utama (hex)
   var AGENT_NAME   = "AI Assistant";                   // Nama agen yang tampil
   var GREETING     = "Halo! Ada yang bisa saya bantu? 😊"; // Pesan sambutan
