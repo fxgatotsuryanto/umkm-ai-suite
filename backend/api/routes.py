@@ -29,6 +29,8 @@ from backend.modules.token_middleware import (
     get_balance,
     get_unsynced_transactions,
     mark_synced,
+    push_unsynced_to_cloud,
+    sync_balance_from_cloud,
 )
 from backend.modules.wa_reply import generate_wa_reply
 from backend.modules.webchat import handle_webchat
@@ -221,39 +223,37 @@ async def content_library(
 
 @router.get("/token/balance", tags=["Token"])
 async def token_balance(db: AsyncSession = Depends(get_db)):
+    """Kembalikan saldo lokal; otomatis sync dari cloud jika sudah > 5 menit."""
+    await sync_balance_from_cloud(db)
     return await get_balance(db)
+
+
+@router.post("/token/sync-cloud", tags=["Token"])
+async def token_sync_cloud(db: AsyncSession = Depends(get_db)):
+    """Paksa sync dua arah: push transaksi lokal ke cloud, lalu pull saldo terbaru."""
+    pushed = await push_unsynced_to_cloud(db)
+    cloud_data = await sync_balance_from_cloud(db, force=True)
+    local = await get_balance(db)
+    return {
+        "pushed": pushed,
+        "balance": local["balance"],
+        "package": local["package"],
+        "expires_at": local["expires_at"],
+        "cloud_synced": cloud_data is not None,
+        "message": "Sinkronisasi selesai" if cloud_data else "Sync lokal saja (cloud tidak tersedia)",
+    }
 
 
 @router.post("/token/sync-offline", tags=["Token"])
 async def token_sync_offline(db: AsyncSession = Depends(get_db)):
-    unsynced = await get_unsynced_transactions(db)
-    if not unsynced:
-        return {"synced": 0, "message": "Tidak ada transaksi yang perlu disinkronkan"}
-
-    payload = [
-        {
-            "id": t.id,
-            "action": t.action,
-            "amount": t.amount,
-            "balance_after": t.balance_after,
-            "reference_id": t.reference_id,
-            "created_at": t.created_at.isoformat(),
-        }
-        for t in unsynced
-    ]
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(
-                f"{settings.CLOUD_API_URL}/api/sync/transactions",
-                json={"transactions": payload, "api_key": settings.CLOUD_API_KEY},
-            )
-        if response.status_code == 200:
-            await mark_synced(db, [t.id for t in unsynced])
-            return {"synced": len(unsynced), "message": "Sinkronisasi berhasil"}
-        return {"synced": 0, "message": f"Cloud error: {response.status_code}"}
-    except Exception as e:
-        return {"synced": 0, "message": f"Gagal terhubung ke cloud: {str(e)}"}
+    """Push transaksi belum tersinkron ke cloud (backward-compat)."""
+    pushed = await push_unsynced_to_cloud(db)
+    if pushed == 0:
+        unsynced = await get_unsynced_transactions(db)
+        if not unsynced:
+            return {"synced": 0, "message": "Tidak ada transaksi yang perlu disinkronkan"}
+        return {"synced": 0, "message": "Gagal terhubung ke cloud"}
+    return {"synced": pushed, "message": "Sinkronisasi berhasil"}
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
