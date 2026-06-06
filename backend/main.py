@@ -185,8 +185,24 @@ _WIDGET_JS = r"""
 """
 
 
+async def _startup_cloud_sync() -> None:
+    """Sync saldo & transaksi ke cloud setelah startup (non-blocking)."""
+    try:
+        from backend.db.database import get_db as _get_db
+        from backend.modules.token_middleware import sync_balance_from_cloud, push_unsynced_to_cloud
+        async for db in _get_db():
+            pushed = await push_unsynced_to_cloud(db)
+            await sync_balance_from_cloud(db, force=True)
+            if pushed:
+                logger.info("Startup cloud sync: %d transaksi terkirim", pushed)
+            break
+    except Exception as exc:
+        logger.warning("Startup cloud sync gagal (non-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     logger.info("Starting up — initializing database...")
     try:
         await init_db()
@@ -194,6 +210,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("Database init FAILED: %s", e)
         raise
+    # Sync ke cloud di background, tidak menghalangi server menerima request
+    asyncio.create_task(_startup_cloud_sync())
     yield
     logger.info("Shutting down")
 
