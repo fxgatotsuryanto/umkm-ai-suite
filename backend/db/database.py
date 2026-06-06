@@ -4,21 +4,29 @@ from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 
 from backend.config import settings
 
-# SQLite: NullPool (koneksi fresh per session, hindari state leak)
-# PostgreSQL/MySQL: AsyncAdaptedQueuePool (connection pooling)
-_is_sqlite = settings.DATABASE_URL.startswith("sqlite")
-_engine_kwargs = {
-    "echo": settings.DEBUG,
-}
+# Normalise DATABASE_URL — Railway mungkin kasih format tanpa driver async
+_db_url = settings.DATABASE_URL
+if _db_url.startswith("mysql://"):
+    _db_url = _db_url.replace("mysql://", "mysql+aiomysql://", 1)
+elif _db_url.startswith("mariadb://"):
+    _db_url = _db_url.replace("mariadb://", "mysql+aiomysql://", 1)
+elif _db_url.startswith("postgresql://"):
+    _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+_is_sqlite = _db_url.startswith("sqlite")
+_engine_kwargs: dict = {"echo": settings.DEBUG}
 if _is_sqlite:
     _engine_kwargs["poolclass"] = NullPool
 else:
     _engine_kwargs["poolclass"] = AsyncAdaptedQueuePool
     _engine_kwargs["pool_size"] = 5
     _engine_kwargs["max_overflow"] = 10
+    _engine_kwargs["pool_recycle"] = 1800
     _engine_kwargs["pool_pre_ping"] = True
 
-engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
+engine = create_async_engine(_db_url, **_engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
