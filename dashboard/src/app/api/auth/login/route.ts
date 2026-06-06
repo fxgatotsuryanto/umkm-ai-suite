@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const CLOUD_URL =
   process.env.CLOUD_API_URL ??
-  'https://umkm-ai-cloud-production-d038.up.railway.app';
+  'https://umkm-backend.aimarketingstrategic.com';
 
 const BACKEND_URL =
   process.env.BACKEND_URL ??
   process.env.NEXT_PUBLIC_BACKEND_URL ??
-  'https://umkm-ai-suite-production.up.railway.app';
+  'https://umkm-backend.aimarketingstrategic.com';
 
 export async function POST(req: NextRequest) {
   try {
