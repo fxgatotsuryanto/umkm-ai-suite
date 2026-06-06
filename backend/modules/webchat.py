@@ -2,11 +2,9 @@ import asyncio
 import logging
 import re
 
-from openai import AsyncOpenAI, APIConnectionError, APIStatusError
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import settings
 from backend.db.database import AsyncSessionLocal
 from backend.db.models import (
     BusinessProfile,
@@ -16,19 +14,11 @@ from backend.db.models import (
     WebChatMessage,
     WebChatSession,
 )
+from backend.modules.cloud_ai import call_cloud_ai, CloudAIError
 from backend.modules.notifications import send_telegram, send_webhook
 from backend.modules.token_middleware import deduct_token, refund_token
 
 logger = logging.getLogger(__name__)
-
-_client: AsyncOpenAI | None = None
-
-
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
-    return _client
 
 
 async def _get_config(db: AsyncSession) -> WebChatConfig:
@@ -151,23 +141,17 @@ async def handle_webchat(
         return {"success": False, "reply": "Pesan tidak boleh kosong.",
                 "session_id": session_id, "tokens_used": 0}
 
-    # ── FASE 1: Ambil semua data dari DB, commit, tutup session ───────────────
-    # Penting: session DB HARUS ditutup sebelum await ke OpenAI.
-    # Jika tidak, event loop context-switch saat await OpenAI bisa menyebabkan
-    # konflik state pada SQLAlchemy session (IllegalStateChangeError).
-
-    config       = await _get_config(db)
+    # ── FASE 1: Ambil semua data dari DB, commit sebelum panggil AI ───────────
+    config        = await _get_config(db)
     wchat_session = await _get_or_create_session(db, session_id)
-    history      = await _get_history(db, session_id)
-    context      = await _build_context(db)
-    token_ok     = await deduct_token(db, "webchat", reference_id=session_id)
+    history       = await _get_history(db, session_id)
+    context       = await _build_context(db)
+    token_ok      = await deduct_token(db, "webchat", reference_id=session_id)
 
-    # Snapshot data yang dibutuhkan setelah session ditutup
-    cta_wa_number    = config.cta_wa_number or ""
+    cta_wa_number       = config.cta_wa_number or ""
     system_prompt_extra = config.system_prompt_extra or ""
-    lead_captured    = wchat_session.lead_captured
+    lead_captured       = wchat_session.lead_captured
 
-    # Commit semua perubahan SEBELUM panggil OpenAI (get_db() akan close otomatis setelah return)
     await db.commit()
 
     if not token_ok:
@@ -178,7 +162,7 @@ async def handle_webchat(
             "tokens_used": 0,
         }
 
-    # ── FASE 2: Bangun prompt & panggil OpenAI (tanpa DB session aktif) ───────
+    # ── FASE 2: Bangun prompt & panggil cloud AI ──────────────────────────────
     business_name = context.split("\n")[0].replace("Nama Bisnis: ", "") if context else "kami"
     cta_wa = f"\nJika pelanggan siap, arahkan ke WhatsApp: wa.me/{cta_wa_number}" if cta_wa_number else ""
     extra  = f"\n{system_prompt_extra}" if system_prompt_extra.strip() else ""
@@ -215,35 +199,28 @@ ATURAN:
     messages_payload.append({"role": "user", "content": message})
 
     try:
-        response = await _get_client().chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        reply = await call_cloud_ai(
             messages=messages_payload,
+            action="webchat",
             max_tokens=500,
             temperature=0.7,
         )
-    except APIConnectionError as e:
-        logger.error("Webchat AI connection error: %s", e)
+    except CloudAIError as e:
+        logger.error("Webchat cloud AI error: %s", e)
         return {"success": False, "session_id": session_id, "tokens_used": 0,
                 "reply": "Maaf, AI sedang tidak dapat dihubungi. Silakan coba lagi.",
                 "error": str(e)}
-    except APIStatusError as e:
-        logger.error("Webchat AI API error %s: %s", e.status_code, e.message)
-        return {"success": False, "session_id": session_id, "tokens_used": 0,
-                "reply": "Maaf, terjadi kesalahan pada layanan AI. Silakan coba lagi.",
-                "error": f"{e.status_code}: {e.message}"}
     except Exception as e:
         logger.exception("Webchat unexpected error")
         return {"success": False, "session_id": session_id, "tokens_used": 0,
                 "reply": "Maaf, terjadi kesalahan tidak terduga.", "error": str(e)}
 
-    reply = response.choices[0].message.content
-
-    # ── FASE 3: Simpan hasil ke DB dengan session BARU ────────────────────────
+    # ── FASE 3: Simpan hasil ke DB dengan session baru ────────────────────────
     lead = _extract_lead(reply)
     just_captured = False
 
     async with AsyncSessionLocal() as new_db:
-        new_db.add(WebChatMessage(session_id=session_id, role="user",    content=message))
+        new_db.add(WebChatMessage(session_id=session_id, role="user", content=message))
         new_db.add(WebChatMessage(session_id=session_id, role="assistant", content=reply))
 
         if lead and not lead_captured:
@@ -263,7 +240,7 @@ ATURAN:
         await new_db.commit()
 
         if just_captured:
-            # Re-load config untuk notifikasi
+            from sqlalchemy import select as sa_select
             cfg_res = await new_db.execute(sa_select(WebChatConfig).limit(1))
             cfg = cfg_res.scalar_one_or_none()
             wcs_res = await new_db.execute(

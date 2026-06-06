@@ -1,24 +1,15 @@
 import json
 import logging
 
-from openai import AsyncOpenAI, APIConnectionError, APIStatusError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.db.models import BusinessProfile, ContentLibrary, Product
+from backend.modules.cloud_ai import call_cloud_ai, CloudAIError
 from backend.modules.token_middleware import deduct_token, refund_token
 
 logger = logging.getLogger(__name__)
-
-_client: AsyncOpenAI | None = None
-
-
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
-    return _client
 
 PLATFORM_STYLES = {
     "instagram": "Visual, engaging, emoji-heavy, hashtag-rich. Maksimal 2200 karakter. Hook kuat di awal.",
@@ -37,11 +28,9 @@ CONTENT_TYPE_DESC = {
 
 
 def _parse_json_safe(raw: str) -> dict:
-    """Parse JSON dari response model, toleran terhadap code fence markdown."""
     text = raw.strip()
     if "```" in text:
         parts = text.split("```")
-        # ambil bagian dalam fence pertama
         text = parts[1]
         if text.startswith("json"):
             text = text[4:]
@@ -79,9 +68,7 @@ async def generate_content(
 
     product_info = ""
     if product_id:
-        product_result = await db.execute(
-            select(Product).where(Product.id == product_id)
-        )
+        product_result = await db.execute(select(Product).where(Product.id == product_id))
         product = product_result.scalar_one_or_none()
         if product:
             product_info = (
@@ -114,47 +101,25 @@ async def generate_content(
         "Buat dalam Bahasa Indonesia yang natural, menarik, dan sesuai karakter platform tersebut."
     )
 
-    if not prompt.strip():
-        await refund_token(db, "content_generate")
-        return {"success": False, "content": None, "error": "Gagal membangun prompt konten."}
-
     try:
-        response = await _get_client().chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        raw = await call_cloud_ai(
             messages=[{"role": "user", "content": prompt}],
+            action="content_generate",
             max_tokens=800,
             temperature=0.8,
         )
-    except APIConnectionError as e:
+    except CloudAIError as e:
         await refund_token(db, "content_generate")
-        logger.error("OpenRouter connection error: %s", e)
-        return {
-            "success": False,
-            "content": None,
-            "error": f"Tidak dapat terhubung ke AI provider: {str(e)}",
-        }
-    except APIStatusError as e:
-        await refund_token(db, "content_generate")
-        logger.error("OpenRouter API error %s: %s", e.status_code, e.message)
-        return {
-            "success": False,
-            "content": None,
-            "error": f"AI provider error ({e.status_code}): {e.message}",
-        }
+        logger.error("Content AI cloud error: %s", e)
+        return {"success": False, "content": None, "error": f"AI error: {e}"}
     except Exception as e:
         await refund_token(db, "content_generate")
-        logger.exception("Unexpected error calling AI provider")
-        return {
-            "success": False,
-            "content": None,
-            "error": f"Error tidak terduga: {str(e)}",
-        }
+        logger.exception("Content AI unexpected error")
+        return {"success": False, "content": None, "error": f"Error tidak terduga: {e}"}
 
-    raw = response.choices[0].message.content
     try:
         result = _parse_json_safe(raw)
     except (json.JSONDecodeError, IndexError):
-        # Model tidak mengembalikan JSON valid — simpan raw sebagai content
         logger.warning("Model returned non-JSON, storing raw content")
         result = {"title": "", "content": raw, "hashtags": "", "cta": ""}
 

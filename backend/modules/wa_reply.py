@@ -1,23 +1,13 @@
 import logging
 
-from openai import AsyncOpenAI, APIConnectionError, APIStatusError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import settings
 from backend.db.models import BusinessProfile, ChatHistory, FAQ, Product
+from backend.modules.cloud_ai import call_cloud_ai, CloudAIError
 from backend.modules.token_middleware import deduct_token, refund_token
 
 logger = logging.getLogger(__name__)
-
-_client: AsyncOpenAI | None = None
-
-
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
-    return _client
 
 
 async def _build_context(db: AsyncSession) -> str:
@@ -39,12 +29,10 @@ async def _build_context(db: AsyncSession) -> str:
         parts.append(f"Nama Bisnis: {profile.name}")
         if profile.description:
             parts.append(f"Deskripsi: {profile.description}")
-
     if products:
         parts.append("\nDaftar Produk:")
         for p in products:
             parts.append(f"- {p.name}: Rp{p.price:,.0f} (stok: {p.stock})")
-
     if faqs:
         parts.append("\nFAQ:")
         for f in faqs:
@@ -92,44 +80,33 @@ Aturan:
 6. Gunakan emoji secukupnya agar terasa personal"""
 
     try:
-        response = await _get_client().chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        reply = await call_cloud_ai(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ],
+            action="wa_reply",
             max_tokens=500,
             temperature=0.7,
         )
-    except APIConnectionError as e:
+    except CloudAIError as e:
         await refund_token(db, "wa_reply", reference_id=wa_number)
-        logger.error("OpenRouter connection error: %s", e)
+        logger.error("WA reply cloud AI error: %s", e)
         return {
             "success": False,
             "reply": "Maaf, AI sedang tidak dapat dihubungi. Silakan coba lagi.",
             "tokens_used": 0,
             "error": str(e),
         }
-    except APIStatusError as e:
-        await refund_token(db, "wa_reply", reference_id=wa_number)
-        logger.error("OpenRouter API error %s: %s", e.status_code, e.message)
-        return {
-            "success": False,
-            "reply": "Maaf, terjadi kesalahan pada layanan AI. Silakan coba lagi.",
-            "tokens_used": 0,
-            "error": f"{e.status_code}: {e.message}",
-        }
     except Exception as e:
         await refund_token(db, "wa_reply", reference_id=wa_number)
-        logger.exception("Unexpected error calling AI provider")
+        logger.exception("WA reply unexpected error")
         return {
             "success": False,
             "reply": "Maaf, terjadi kesalahan tidak terduga.",
             "tokens_used": 0,
             "error": str(e),
         }
-
-    reply = response.choices[0].message.content
 
     chat = ChatHistory(
         wa_number=wa_number,
