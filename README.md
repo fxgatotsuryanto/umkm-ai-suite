@@ -86,11 +86,11 @@ https://umkm-dashboard-xxx.up.railway.app ← Next.js (dashboard)
 
 **Step 2 — Deploy Backend (FastAPI)**
 
-Railway otomatis mendeteksi `railway.toml` di root dan menjalankan `uvicorn`.
+Railway otomatis mendeteksi `railway.toml` di root dan menjalankan `uvicorn` dengan konfigurasi yang telah dioptimalkan untuk penghematan penggunaan sumber daya.
 
 Di tab **Variables** service backend, isi:
 
-```
+```env
 OPENAI_API_KEY      = sk-or-v1-...          (dari openrouter.ai)
 OPENAI_BASE_URL     = https://openrouter.ai/api/v1
 OPENAI_MODEL        = openai/gpt-4o-mini
@@ -104,6 +104,7 @@ DATABASE_URL        = sqlite+aiosqlite:////data/umkm_local.db
 
 > **Persistent data**: Di tab **Settings** → **Add Volume**, mount ke `/data`.  
 > Tanpa volume, database reset saat redeploy.
+
 
 Setelah deploy, catat URL backend, contoh:  
 `https://umkm-backend-xxx.up.railway.app`
