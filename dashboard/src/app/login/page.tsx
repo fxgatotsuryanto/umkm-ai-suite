@@ -1,9 +1,7 @@
 'use client';
 import { useState } from 'react';
 
-// URL cloud dipanggil langsung dari browser (client-side) untuk menghindari
-// masalah server-side fetch antar project Railway.
-const CLOUD_URL = 'https://umkm-ai-cloud-production-d038.up.railway.app';
+const CLOUD_URL = 'https://umkm-backend.aimarketingstrategic.com';
 
 export default function LoginPage() {
   const [key, setKey] = useState('');

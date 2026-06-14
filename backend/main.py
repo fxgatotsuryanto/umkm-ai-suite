@@ -23,6 +23,7 @@ _WIDGET_JS = r"""
  *     var UMKM_AGENT    = "AI Assistant";
  *     var UMKM_GREETING = "Halo! Ada yang bisa saya bantu?";
  *     var UMKM_AUTO_OPEN = false;
+ *     var UMKM_BUSINESS_KEY = "your-license-key";  // required for multi-tenant
  *   </script>
  */
 (function () {
@@ -31,6 +32,7 @@ _WIDGET_JS = r"""
   var NAME = (typeof UMKM_AGENT    !== 'undefined' ? UMKM_AGENT    : 'AI Assistant');
   var GREET= (typeof UMKM_GREETING !== 'undefined' ? UMKM_GREETING : 'Halo! Ada yang bisa saya bantu? 😊');
   var AUTO = (typeof UMKM_AUTO_OPEN!== 'undefined' ? UMKM_AUTO_OPEN: false);
+  var BKEY = (typeof UMKM_BUSINESS_KEY !== 'undefined' ? UMKM_BUSINESS_KEY : '');
 
   if (!BASE) { console.warn('[UMKM Widget] UMKM_BACKEND tidak di-set'); return; }
 
@@ -78,7 +80,7 @@ _WIDGET_JS = r"""
       '<div id="_wh">',
         '<div class="av">🤖</div>',
         '<div><div class="nm" id="_nm">'+NAME+'</div><div class="st">Online</div></div>',
-        '<button id="_cl" aria-label="Tutup">×</button>',
+        '<button id="_cl" aria-label="Tutup">\xD7</button>',
       '</div>',
       '<div id="_msgs"></div>',
       '<div id="_ft">',
@@ -108,8 +110,8 @@ _WIDGET_JS = r"""
   try { hist = JSON.parse(localStorage.getItem(HK) || '[]'); } catch(e){}
   hist.forEach(function(m){ addMsg(m.r, m.t, false); });
 
-  /* Ambil config dari backend */
-  fetch(BASE + '/api/webchat/widget-config')
+  var configUrl = BASE + '/api/webchat/widget-config' + (BKEY ? '?business_key=' + encodeURIComponent(BKEY) : '');
+  fetch(configUrl)
     .then(function(r){ return r.json(); })
     .then(function(c){
       if (c.business_name) document.getElementById('_nm').textContent = c.business_name;
@@ -148,7 +150,7 @@ _WIDGET_JS = r"""
     fetch(BASE + '/api/webchat/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sid, message: txt })
+      body: JSON.stringify({ session_id: sid, message: txt, business_key: BKEY })
     })
     .then(function(r){ return r.json(); })
     .then(function(d){
@@ -185,6 +187,26 @@ _WIDGET_JS = r"""
 """
 
 
+async def _run_migrations(engine) -> None:
+    """Add license_key column to existing tables if missing (idempotent)."""
+    from sqlalchemy import text
+    tables = [
+        "products", "faqs", "chat_histories", "content_library",
+        "business_profiles", "token_balance", "token_ledger",
+        "webchat_config", "webchat_sessions",
+    ]
+    async with engine.connect() as conn:
+        for table in tables:
+            try:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN license_key VARCHAR(120) NOT NULL DEFAULT ''")
+                )
+                await conn.commit()
+                logger.info("Migration: added license_key to %s", table)
+            except Exception:
+                await conn.rollback()  # column already exists — safe to ignore
+
+
 async def _startup_cloud_sync() -> None:
     """Sync saldo & transaksi ke cloud setelah startup (non-blocking)."""
     try:
@@ -203,14 +225,15 @@ async def _startup_cloud_sync() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
-    logger.info("Starting up — initializing database...")
+    from backend.db.database import engine
+    logger.info("Starting up — running migrations...")
     try:
+        await _run_migrations(engine)
         await init_db()
-        logger.info("Database initialized OK")
+        logger.info("Database ready")
     except Exception as e:
         logger.exception("Database init FAILED: %s", e)
         raise
-    # Sync ke cloud di background, tidak menghalangi server menerima request
     asyncio.create_task(_startup_cloud_sync())
     yield
     logger.info("Shutting down")
@@ -223,7 +246,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS: izinkan semua origin jika CORS_ORIGINS kosong
 _raw = getattr(settings, "CORS_ORIGINS", "").strip()
 _cors_origins = [o.strip() for o in _raw.split(",") if o.strip()] or ["*"]
 
@@ -240,7 +262,6 @@ app.include_router(router, prefix="/api")
 
 @app.get("/widget.js", tags=["Widget"], include_in_schema=False)
 async def serve_widget_js():
-    """Widget JS yang bisa di-embed langsung di website client."""
     return Response(
         content=_WIDGET_JS,
         media_type="application/javascript",

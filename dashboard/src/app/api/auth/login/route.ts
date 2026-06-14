@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Cloud backend (license & token billing) — sekarang di domain baru
 const CLOUD_URL =
   process.env.CLOUD_API_URL ??
-  'https://umkm-ai-cloud-production-d038.up.railway.app';
+  'https://umkm-backend.aimarketingstrategic.com';
 
+// Suite backend (AI, chat, konten, produk) — masih di Railway
 const BACKEND_URL =
   process.env.BACKEND_URL ??
   process.env.NEXT_PUBLIC_BACKEND_URL ??
