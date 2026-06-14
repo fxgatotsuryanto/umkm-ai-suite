@@ -1,82 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Cloud backend (license & token billing) — sekarang di domain baru
 const CLOUD_URL =
   process.env.CLOUD_API_URL ??
   'https://umkm-backend.aimarketingstrategic.com';
 
-// Suite backend (AI, chat, konten, produk) — masih di Railway
-const BACKEND_URL =
-  process.env.BACKEND_URL ??
-  process.env.NEXT_PUBLIC_BACKEND_URL ??
-  'https://umkm-ai-suite-production.up.railway.app';
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const licenseKey: string = body.license_key ?? '';
+    const licenseKey: string = (body.license_key ?? '').trim();
 
     if (!licenseKey) {
       return NextResponse.json({ detail: 'License key tidak boleh kosong' }, { status: 400 });
     }
 
-    // Coba validasi via backend suite dulu
-    if (BACKEND_URL) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ license_key: licenseKey }),
-          signal: AbortSignal.timeout(8000),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return NextResponse.json(data);
-        }
-      } catch {
-        // Backend tidak tersedia, lanjut ke validasi cloud langsung
-      }
-    }
+    console.log(`[Login] Validating license via ${CLOUD_URL}/license/validate`);
 
-    // Validasi langsung ke cloud server
-    let cloudStatus = 0;
-    let cloudBody = '';
+    let cloudRes: Response;
     try {
-      const cloudRes = await fetch(`${CLOUD_URL}/license/validate`, {
+      cloudRes = await fetch(`${CLOUD_URL}/license/validate`, {
         method: 'GET',
-        headers: { 'x-api-key': licenseKey },
-        signal: AbortSignal.timeout(8000),
+        headers: { 'X-API-Key': licenseKey },
       });
-      cloudStatus = cloudRes.status;
-      cloudBody = await cloudRes.text();
-
-      if (cloudRes.ok) {
-        const data = JSON.parse(cloudBody);
-        return NextResponse.json({
-          success: true,
-          business_name: data.business_name ?? '',
-          package: data.package ?? '',
-          expires_at: data.expires_at ?? null,
-        });
-      }
     } catch (fetchErr) {
+      console.error('[Login] Cloud server unreachable:', fetchErr);
       return NextResponse.json(
-        { detail: `Gagal koneksi ke cloud: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}` },
+        { detail: `Tidak dapat terhubung ke server (${CLOUD_URL}). Periksa koneksi internet Anda.` },
         { status: 502 }
       );
     }
 
-    // Tampilkan error detail dari cloud untuk debugging
-    let cloudDetail = '';
-    try { cloudDetail = JSON.parse(cloudBody)?.detail ?? cloudBody; } catch { cloudDetail = cloudBody; }
+    const rawBody = await cloudRes.text();
+    console.log(`[Login] Cloud status: ${cloudRes.status}, body: ${rawBody}`);
 
+    if (cloudRes.ok) {
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(rawBody); } catch { /* ignore */ }
+      if (!data.valid && !data.success) {
+        return NextResponse.json({ detail: 'License key tidak valid atau expired' }, { status: 401 });
+      }
+      return NextResponse.json({
+        success: true,
+        business_name: data.business_name ?? '',
+        package: data.package ?? '',
+        expires_at: data.expires_at ?? null,
+      });
+    }
+
+    let detail = '';
+    try { detail = (JSON.parse(rawBody) as { detail?: string }).detail ?? rawBody; } catch { detail = rawBody; }
     return NextResponse.json(
-      { detail: `[Cloud ${cloudStatus}] ${cloudDetail}` },
-      { status: 401 }
+      { detail: detail || `License key tidak valid (${cloudRes.status})` },
+      { status: cloudRes.status }
     );
+
   } catch (err) {
+    console.error('[Login] Unexpected error:', err);
     return NextResponse.json(
-      { detail: `Error: ${err instanceof Error ? err.message : 'unknown error'}` },
+      { detail: `Error pada server: ${err instanceof Error ? err.message : 'unknown error'}` },
       { status: 500 }
     );
   }

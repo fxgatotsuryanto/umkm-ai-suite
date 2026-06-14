@@ -32,7 +32,9 @@ from backend.modules.token_middleware import (
     mark_synced,
     push_unsynced_to_cloud,
     sync_balance_from_cloud,
+    _get_or_create_balance,
 )
+
 from backend.modules.wa_reply import generate_wa_reply
 from backend.modules.webchat import handle_webchat
 
@@ -126,7 +128,118 @@ class LoginRequest(BaseModel):
     license_key: str
 
 
+class AdminTokenRequest(BaseModel):
+    amount: int
+    reason: str = "admin_topup"
+
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+def _get_admin_key() -> str:
+    """Kembalikan ADMIN_API_KEY jika di-set, fallback ke SECRET_KEY."""
+    return (settings.ADMIN_API_KEY or settings.SECRET_KEY).strip()
+
+
+@router.post("/admin/token/add", tags=["Admin"])
+async def admin_add_token(
+    req: AdminTokenRequest,
+    x_admin_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Tambah token lokal secara manual (tanpa cloud sync).
+    Berguna saat CLOUD_API_KEY belum dikonfigurasi atau untuk testing.
+    Header: X-Admin-Key: <ADMIN_API_KEY atau SECRET_KEY>
+    """
+    admin_key = _get_admin_key()
+    if not x_admin_key or x_admin_key != admin_key:
+        raise HTTPException(status_code=401, detail="Admin key tidak valid")
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Jumlah token harus lebih dari 0")
+
+    new_balance = await add_token(db, req.amount, action=req.reason)
+    return {
+        "success": True,
+        "added": req.amount,
+        "new_balance": new_balance,
+        "message": f"Berhasil menambah {req.amount} token",
+    }
+
+
+@router.get("/admin/status", tags=["Admin"])
+async def admin_status(
+    x_admin_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cek status konfigurasi backend (environment variables, token, dll).
+    Header: X-Admin-Key: <ADMIN_API_KEY atau SECRET_KEY>
+    """
+    admin_key = _get_admin_key()
+    if not x_admin_key or x_admin_key != admin_key:
+        raise HTTPException(status_code=401, detail="Admin key tidak valid")
+
+    balance_info = await get_balance(db)
+    return {
+        "app": settings.APP_NAME,
+        "config": {
+            "openai_configured": bool(settings.OPENAI_API_KEY),
+            "openai_model": settings.OPENAI_MODEL,
+            "cloud_url": settings.CLOUD_API_URL,
+            "cloud_configured": bool(
+                settings.CLOUD_API_KEY
+                and settings.CLOUD_API_URL != "https://your-cloud.railway.app"
+            ),
+            "cors_origins": settings.CORS_ORIGINS or "*",
+            "business_name": settings.BUSINESS_NAME,
+            "initial_token_balance": settings.INITIAL_TOKEN_BALANCE,
+        },
+        "token": balance_info,
+    }
+
+
+@router.post("/admin/token/set-package", tags=["Admin"])
+async def admin_set_package(
+    package: str,
+    expires_days: int = 365,
+    x_admin_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Set paket dan tanggal kadaluarsa token secara manual.
+    Header: X-Admin-Key: <ADMIN_API_KEY atau SECRET_KEY>
+    """
+    from datetime import datetime, timedelta
+
+    admin_key = _get_admin_key()
+    if not x_admin_key or x_admin_key != admin_key:
+        raise HTTPException(status_code=401, detail="Admin key tidak valid")
+
+    valid_packages = {"starter", "growth", "pro", "custom"}
+    if package not in valid_packages:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Package harus salah satu dari: {', '.join(valid_packages)}",
+        )
+
+    token = await _get_or_create_balance(db)
+    token.package = package
+    token.expires_at = datetime.utcnow() + timedelta(days=expires_days)
+    await db.commit()
+    await db.refresh(token)
+
+    return {
+        "success": True,
+        "package": token.package,
+        "expires_at": token.expires_at.isoformat(),
+        "balance": token.balance,
+        "message": f"Paket berhasil diset ke '{package}', berlaku {expires_days} hari",
+    }
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
+
 
 @router.post("/auth/login", tags=["Auth"])
 async def login(req: LoginRequest):
@@ -165,6 +278,54 @@ async def auth_me(license_key: str = Depends(get_license_key)):
         "business_name": settings.BUSINESS_NAME,
         "license_key": license_key[:8] + "****",
     }
+
+
+# ── License Validation (Compatibility) ────────────────────────────────────────
+
+@router.get("/license/validate", tags=["License"])
+async def license_validate(
+    x_api_key: Optional[str] = Header(None),
+):
+    """
+    Endpoint kompatibilitas untuk validasi license key.
+    Header: X-API-Key: <license_key>
+    """
+    key = (x_api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="License key tidak boleh kosong")
+
+    # Validasi lokal: cocokkan dengan CLOUD_API_KEY yang di-set di env
+    if settings.CLOUD_API_KEY and key == settings.CLOUD_API_KEY:
+        return {
+            "valid": True,
+            "business_name": settings.BUSINESS_NAME,
+            "package": "local",
+            "expires_at": None,
+        }
+
+    # Validasi via cloud server jika CLOUD_API_URL di-set
+    if settings.CLOUD_API_URL and settings.CLOUD_API_URL != "https://your-cloud.railway.app":
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.get(
+                    f"{settings.CLOUD_API_URL}/license/validate",
+                    headers={"x-api-key": key},
+                )
+            if r.status_code == 200:
+                data = r.json()
+                # Simpan key sebagai CLOUD_API_KEY runtime jika belum di-set
+                if not settings.CLOUD_API_KEY:
+                    settings.CLOUD_API_KEY = key
+                return {
+                    "valid": True,
+                    "business_name": data.get("business_name", settings.BUSINESS_NAME),
+                    "package": data.get("package", ""),
+                    "expires_at": data.get("expires_at"),
+                }
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Validasi cloud gagal: {str(e)}")
+
+    raise HTTPException(status_code=401, detail="License key tidak valid")
 
 
 # ── WA Auto-Reply ─────────────────────────────────────────────────────────────

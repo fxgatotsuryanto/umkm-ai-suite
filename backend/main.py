@@ -222,6 +222,34 @@ async def _startup_cloud_sync() -> None:
         logger.warning("Startup cloud sync gagal (non-fatal): %s", exc)
 
 
+async def _startup_initial_token() -> None:
+    """Set token awal jika INITIAL_TOKEN_BALANCE > 0 dan saldo saat ini = 0."""
+    if settings.INITIAL_TOKEN_BALANCE <= 0:
+        return
+    try:
+        from backend.db.database import get_db as _get_db
+        from backend.modules.token_middleware import get_balance, add_token
+        async for db in _get_db():
+            balance_info = await get_balance(db)
+            current = balance_info.get("balance", 0)
+            if current == 0:
+                new_bal = await add_token(
+                    db,
+                    settings.INITIAL_TOKEN_BALANCE,
+                    action="initial_balance",
+                    reference_id="startup",
+                )
+                logger.info(
+                    "Token awal diset: %d token (INITIAL_TOKEN_BALANCE)",
+                    new_bal,
+                )
+            else:
+                logger.info("Token sudah ada (%d), skip initial balance", current)
+            break
+    except Exception as exc:
+        logger.warning("Set initial token gagal (non-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
@@ -234,9 +262,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("Database init FAILED: %s", e)
         raise
+    # Set token awal jika dikonfigurasi (sebelum cloud sync)
+    await _startup_initial_token()
+    # Sync ke cloud di background, tidak menghalangi server menerima request
     asyncio.create_task(_startup_cloud_sync())
     yield
     logger.info("Shutting down")
+
 
 
 app = FastAPI(
@@ -288,4 +320,5 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "status": "running",
+        "backend": "aimarketingstrategic",
     }

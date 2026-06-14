@@ -1,21 +1,22 @@
 'use client';
 import { useState } from 'react';
-
-const CLOUD_URL = 'https://umkm-backend.aimarketingstrategic.com';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${CLOUD_URL}/license/validate`, {
-        method: 'GET',
-        headers: { 'x-api-key': key.trim() },
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ license_key: key.trim() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -24,7 +25,7 @@ export default function LoginPage() {
       const data = await res.json();
       localStorage.setItem('umkm_license', key.trim());
       localStorage.setItem('umkm_business', data.business_name ?? '');
-      window.location.href = '/';
+      router.push('/');
     } catch (err: unknown) {
       if (err instanceof TypeError && err.message.includes('fetch')) {
         setError('Tidak bisa terhubung ke server. Periksa koneksi internet Anda.');

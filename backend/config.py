@@ -25,8 +25,16 @@ class Settings(BaseSettings):
 
     TELEGRAM_BOT_TOKEN: str = ""  # untuk notifikasi lead webchat
 
+    # Token awal saat startup (berguna jika CLOUD_API_KEY belum dikonfigurasi)
+    # Set ke 0 untuk menonaktifkan, atau angka positif untuk memberikan token awal
+    INITIAL_TOKEN_BALANCE: int = 0
+
+    # Admin key untuk endpoint admin (default sama dengan SECRET_KEY jika kosong)
+    ADMIN_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()
